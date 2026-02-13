@@ -53,7 +53,7 @@ pip install .
 Start scraping with the following command:
 
 ```shell
-crawler-to-md --url <URL> [--output-folder ./output] [--cache-folder ./cache] [--overwrite-cache|-w] [--base-url <BASE_URL>] [--exclude-url <KEYWORD_IN_URL>] [--title <TITLE>] [--urls-file <URLS_FILE>] [-p <PROXY_URL>]
+crawler-to-md --url <URL> [--output-folder ./output] [--cache-folder ~/.cache/crawler-to-md] [--overwrite-cache|-w] [--base-url <BASE_URL>] [--exclude-url <KEYWORD_IN_URL>] [--include-url <KEYWORD_IN_URL>] [--title <TITLE>] [--urls-file <URLS_FILE>] [--timeout <SECONDS>] [-p <PROXY_URL>] [--no-markdown] [--no-json] [--minify|-m]
 ```
 
 Options:
@@ -61,15 +61,20 @@ Options:
 - `--url`, `-u`: The starting URL. 🌍
 - `--urls-file`: Path to a file containing URLs to scrape, one URL per line. If '-', read from stdin. 📁
 - `--output-folder`, `-o`: Where to save Markdown files (default: `./output`). 📂
-- `--cache-folder`, `-c`: Where to store the database (default: `./cache`). 💾
+- `--cache-folder`, `-c`: Where to store the database (default: `~/.cache/crawler-to-md`). 💾
 - `--overwrite-cache`, `-w`: Overwrite existing cache database before scraping. 🧹
 - `--base-url`, `-b`: Filter links by base URL (default: URL's base). 🔎
 - `--title`, `-t`: Final title of the markdown file. Defaults to the URL. 🏷️
 - `--exclude-url`, `-e`: Exclude URLs containing this string (repeatable). ❌
+- `--include-url`, `-I`: Include only URLs containing this string (repeatable). 🔍
 - `--export-individual`, `-ei`: Export each page as an individual Markdown file. 📝
 - `--rate-limit`, `-rl`: Maximum number of requests per minute (default: 0, no rate limit). ⏱️
 - `--delay`, `-d`: Delay between requests in seconds (default: 0, no delay). 🕒
 - `--proxy`, `-p`: Proxy URL for HTTP or SOCKS requests. 🌐
+- `--timeout`: Request timeout in seconds (default: `10`). ⌛
+- `--no-markdown`: Disable generation of the compiled Markdown file. 🚫📝
+- `--no-json`: Disable generation of the compiled JSON file. 🚫🧾
+- `--minify`, `-m`: Minify generated Markdown output for AI ingestion/content backup (not rendering fidelity). 🧠
 - `--include`, `-i`: CSS-like selector (#id, .class, tag) to include before Markdown conversion (repeatable). ✅
 - `--exclude`, `-x`: CSS-like selector (#id, .class, tag) to exclude before Markdown conversion (repeatable). 🚫
 
