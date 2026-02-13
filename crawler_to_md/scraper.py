@@ -67,12 +67,24 @@ class Scraper:
             self.session.proxies.update({"http": proxy, "https": proxy})
         self.proxy = proxy
         self.unvisited_links_batch_size = self.UNVISITED_LINKS_BATCH_SIZE
+        self._markdown_converter = None
 
         self.include_filters = include_filters or []
         self.exclude_filters = exclude_filters or []
 
         if proxy:
             self._test_proxy()
+
+    def _get_markdown_converter(self):
+        """
+        Return a cached Markdown converter instance for this scraper.
+
+        Returns:
+            MarkItDown: Converter instance reused across page conversions.
+        """
+        if self._markdown_converter is None:
+            self._markdown_converter = MarkItDown()
+        return self._markdown_converter
 
     def _test_proxy(self):
         """
@@ -195,7 +207,7 @@ class Scraper:
                 tmp.write(filtered_html)
                 tmp_path = tmp.name
 
-            markdown = str(MarkItDown().convert(tmp_path))
+            markdown = str(self._get_markdown_converter().convert(tmp_path))
 
             os.remove(tmp_path)
 

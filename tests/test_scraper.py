@@ -413,6 +413,55 @@ def test_start_scraping_parses_each_page_once(monkeypatch):
     assert parse_count["count"] == 3
 
 
+def test_start_scraping_reuses_single_markitdown_instance(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    scraper.unvisited_links_batch_size = 10
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = '<html><body><a href="/n1">n1</a><a href="/n2">n2</a></body></html>'
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
+
+    class DummyTqdm:
+        def __init__(self, *a, **k):
+            self.total = k.get("total", 0)
+
+        def update(self, n):
+            pass
+
+        def refresh(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tqdm, "tqdm", lambda *a, **k: DummyTqdm(*a, **k))
+
+    with (
+        patch("crawler_to_md.scraper.MarkItDown") as mock_markdown,
+        patch("crawler_to_md.scraper.tempfile.NamedTemporaryFile") as mock_tempfile,
+        patch("crawler_to_md.scraper.os.remove"),
+    ):
+        mock_file = MagicMock()
+        mock_file.name = "dummy_path"
+        mock_tempfile.return_value.__enter__.return_value = mock_file
+        mock_markdown.return_value.convert.return_value = "# MD"
+
+        scraper.start_scraping(url="http://example.com/start")
+
+    assert db.get_visited_links_count() == 3
+    assert mock_markdown.call_count == 1
+    assert mock_markdown.return_value.convert.call_count == 3
+
+
 def test_scraper_proxy_initialization(monkeypatch):
     db = DummyDB()
     monkeypatch.setattr(Scraper, "_test_proxy", lambda self: None)

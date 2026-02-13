@@ -17,6 +17,7 @@ Primary target profile:
 - Completed: Task 1.3 and Task 1.4 (minify-aware compiled markdown optimizations)
 - Completed: Task 2.1 (paged unvisited-link reads in crawl loop)
 - Completed: Task 2.2 (single-pass parse/extract in crawl path)
+- Completed: Task 2.3 (single MarkItDown instance reused per scrape run)
 
 ---
 
