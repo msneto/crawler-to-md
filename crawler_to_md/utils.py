@@ -103,3 +103,90 @@ def deduplicate_list(input_list):
     seen = set()
     deduplicated_list = [x for x in input_list if not (x in seen or seen.add(x))]
     return deduplicated_list
+
+
+def normalize_url(url):
+    """
+    Normalize an absolute URL for stable validation and deduplication.
+
+    Args:
+        url (str): Absolute URL to normalize.
+
+    Returns:
+        str: Normalized URL without fragment.
+
+    Raises:
+        ValueError: If the URL is not a non-empty absolute URL.
+    """
+    if not isinstance(url, str):
+        raise ValueError("URL must be a string")
+
+    candidate = url.strip()
+    if not candidate:
+        raise ValueError("URL must be a non-empty string")
+
+    parsed = urlparse(candidate)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("URL must be absolute")
+
+    scheme = parsed.scheme.lower()
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("URL hostname is required")
+
+    netloc = hostname
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+
+    path = parsed.path or ""
+
+    return urlunparse((scheme, netloc, path, parsed.params, parsed.query, ""))
+
+
+def is_supported_scheme(url):
+    """
+    Check if URL scheme is supported for crawling.
+
+    Args:
+        url (str): URL to inspect.
+
+    Returns:
+        bool: True for http(s), False otherwise.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    return parsed.scheme.lower() in {"http", "https"}
+
+
+def is_url_in_scope(url, base_url):
+    """
+    Check whether a URL is in scope of a base URL.
+
+    Args:
+        url (str): Candidate absolute URL.
+        base_url (str): Base absolute URL.
+
+    Returns:
+        bool: True when the candidate is under the base scope.
+    """
+    parsed_url = urlparse(url)
+    parsed_base = urlparse(base_url)
+
+    if parsed_url.scheme != parsed_base.scheme:
+        return False
+    if parsed_url.netloc != parsed_base.netloc:
+        return False
+
+    base_path = parsed_base.path or "/"
+    candidate_path = parsed_url.path or "/"
+
+    if base_path == "/":
+        return True
+
+    if not base_path.endswith("/"):
+        return candidate_path == base_path or candidate_path.startswith(base_path + "/")
+
+    return candidate_path.startswith(base_path)

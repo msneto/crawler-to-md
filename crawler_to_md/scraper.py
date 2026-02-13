@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup, Tag
 from markitdown import MarkItDown
 from tqdm import tqdm
 
-from . import log_setup
+from . import log_setup, utils
 from .database_manager import DatabaseManager
 
 logger = log_setup.get_logger()
@@ -55,7 +55,7 @@ class Scraper:
             ValueError: If a proxy is provided but unreachable.
         """
         logger.debug(f"Initializing Scraper with base URL: {base_url}")
-        self.base_url = base_url
+        self.base_url = utils.normalize_url(base_url) if base_url else base_url
         self.exclude_patterns = exclude_patterns or []
         self.include_url_patterns = include_url_patterns or []
         self.db_manager = db_manager
@@ -153,13 +153,17 @@ class Scraper:
                 if href:
                     if isinstance(href, list):
                         href = href[0]
-                    links.append(urljoin(url, str(href)))
+                    absolute_link = urljoin(url, str(href))
+                    link_without_fragment = urldefrag(absolute_link)[0]
+                    try:
+                        normalized_link = utils.normalize_url(link_without_fragment)
+                    except ValueError:
+                        continue
+                    if not utils.is_supported_scheme(normalized_link):
+                        continue
+                    links.append(normalized_link)
 
-        filtered_links = [
-            urldefrag(link)[0]
-            for link in links
-            if self.is_valid_link(urldefrag(link)[0])
-        ]
+        filtered_links = [link for link in links if self.is_valid_link(link)]
         logger.debug(f"Found {len(filtered_links)} valid links on {url}")
         return set(filtered_links)
 
@@ -233,17 +237,25 @@ class Scraper:
         Returns:
             bool: True if the link is valid, False otherwise.
         """
+        try:
+            normalized_link = utils.normalize_url(link)
+        except ValueError:
+            logger.debug(f"Link validation for {link}: False")
+            return False
+
         valid = True
-        if self.base_url and not link.startswith(self.base_url):
+        if not utils.is_supported_scheme(normalized_link):
+            valid = False
+        if self.base_url and not utils.is_url_in_scope(normalized_link, self.base_url):
             valid = False
         if self.include_url_patterns and not any(
-            pattern in link for pattern in self.include_url_patterns
+            pattern in normalized_link for pattern in self.include_url_patterns
         ):
             valid = False
         for pattern in self.exclude_patterns:
-            if pattern in link:
+            if pattern in normalized_link:
                 valid = False
-        logger.debug(f"Link validation for {link}: {valid}")
+        logger.debug(f"Link validation for {normalized_link}: {valid}")
         return valid
 
     def fetch_links(self, url, html=None):
@@ -310,23 +322,40 @@ class Scraper:
             # Build a new list of valid URLs without modifying the original list
             validated_urls = []
             for url_item in urls:
-                if not self.is_valid_link(url_item):
+                try:
+                    normalized_url = utils.normalize_url(url_item)
+                except ValueError:
                     logger.warning(f"Skipping invalid URL: {url_item}")
                     continue
-                validated_urls.append(url_item)
+
+                if not self.is_valid_link(normalized_url):
+                    logger.warning(f"Skipping invalid URL: {url_item}")
+                    continue
+                validated_urls.append(normalized_url)
 
             # Insert the validated list of URLs into the database
             self.db_manager.insert_link(validated_urls)
         elif url:
             # Insert a single URL if provided and valid
-            self.db_manager.insert_link(url)
+            try:
+                normalized_url = utils.normalize_url(url)
+            except ValueError:
+                logger.warning(f"Skipping invalid URL: {url}")
+                normalized_url = None
+
+            if normalized_url:
+                self.db_manager.insert_link(normalized_url)
 
         # Auto-retry previously failed pages (content IS NULL)
         for failed_url in self.db_manager.get_failed_page_urls():
-            if not self.is_valid_link(failed_url):
+            try:
+                normalized_failed_url = utils.normalize_url(failed_url)
+            except ValueError:
                 continue
-            self.db_manager.insert_link(failed_url)
-            self.db_manager.mark_link_unvisited(failed_url)
+            if not self.is_valid_link(normalized_failed_url):
+                continue
+            self.db_manager.insert_link(normalized_failed_url)
+            self.db_manager.mark_link_unvisited(normalized_failed_url)
 
         # Log the start of the scraping process
         logger.info("Starting scraping process")
@@ -383,7 +412,16 @@ class Scraper:
                     time.sleep(self.delay)
 
                 pbar.update(1)  # Update the progress bar
-                url = link[0]  # Extract the URL from the link tuple
+                raw_url = link[0]
+                try:
+                    url = utils.normalize_url(raw_url)
+                except ValueError:
+                    self.db_manager.mark_link_visited(raw_url)
+                    continue
+
+                if not self.is_valid_link(url):
+                    self.db_manager.mark_link_visited(raw_url)
+                    continue
 
                 # Attempt to fetch the page content
                 try:
@@ -403,7 +441,7 @@ class Scraper:
                             error_message=str(exc),
                         ),
                     )
-                    self.db_manager.mark_link_visited(url)
+                    self.db_manager.mark_link_visited(raw_url)
                     continue
 
                 # Check for a successful response and correct content type
@@ -411,7 +449,7 @@ class Scraper:
                     "content-type", ""
                 ).startswith("text/html"):
                     # Mark the link as visited and log the reason for skipping
-                    self.db_manager.mark_link_visited(url)
+                    self.db_manager.mark_link_visited(raw_url)
                     logger.info(
                         "Skipping link %s due to invalid status code or content type",
                         url,
@@ -470,7 +508,7 @@ class Scraper:
                         pbar.refresh()
 
                 # Mark the current link as visited in the database
-                self.db_manager.mark_link_visited(url)
+                self.db_manager.mark_link_visited(raw_url)
 
         # Close the progress bar upon completion of the scraping process
         pbar.close()

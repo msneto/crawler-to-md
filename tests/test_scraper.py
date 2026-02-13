@@ -90,6 +90,57 @@ def test_fetch_links_includes_only_matching_patterns():
     assert links == {"https://example.com/page1"}
 
 
+def test_fetch_links_skips_unsupported_schemes():
+    db = DummyDB()
+    scraper = Scraper(
+        base_url="https://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    html = """<html><body>
+    <a href="mailto:test@example.com">mail</a>
+    <a href="javascript:void(0)">js</a>
+    <a href="tel:+123">tel</a>
+    <a href="/page">ok</a>
+    </body></html>"""
+
+    links = scraper.fetch_links(url="https://example.com", html=html)
+
+    assert links == {"https://example.com/page"}
+
+
+def test_fetch_links_normalizes_and_deduplicates_links():
+    db = DummyDB()
+    scraper = Scraper(
+        base_url="https://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    html = """<html><body>
+    <a href="https://EXAMPLE.com/page#one">a</a>
+    <a href="https://example.com/page#two">b</a>
+    </body></html>"""
+
+    links = scraper.fetch_links(url="https://example.com", html=html)
+
+    assert links == {"https://example.com/page"}
+
+
+def test_is_valid_link_rejects_similar_host_prefix():
+    db = DummyDB()
+    scraper = Scraper(
+        base_url="https://example.com/docs",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+
+    assert scraper.is_valid_link("https://example.com/docs/page")
+    assert not scraper.is_valid_link("https://example.come/docs/page")
+
+
 @patch("os.remove")
 @patch("tempfile.NamedTemporaryFile")
 def test_scrape_page_parses_content_and_metadata(mock_tempfile, mock_os_remove):
@@ -574,6 +625,49 @@ def test_start_scraping_excludes_invalid_urls(monkeypatch):
     scraper.start_scraping(urls_list=urls)
 
     assert "http://example.com/exclude/page" not in db.links
+
+
+def test_start_scraping_normalizes_seed_urls(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="https://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+
+    monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
+    monkeypatch.setattr(
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html></html>"
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
+
+    class DummyTqdm:
+        def __init__(self, *a, **k):
+            self.total = k.get("total", 0)
+
+        def update(self, n):
+            pass
+
+        def refresh(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tqdm, "tqdm", lambda *a, **k: DummyTqdm(*a, **k))
+
+    scraper.start_scraping(urls_list=["HTTPS://EXAMPLE.COM/Page#frag"])
+
+    assert "https://example.com/Page" in db.links
 
 
 def test_start_scraping_filters_discovered_links(monkeypatch):

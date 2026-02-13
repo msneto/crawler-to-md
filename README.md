@@ -36,6 +36,7 @@ crawler-to-md --url https://www.example.com
 - Uses SQLite for efficient data management. 📊
 - Configurable via command-line arguments. ⚙️
 - Include or exclude specific HTML elements using CSS-like selectors (#id, .class, tag) during Markdown conversion. 🧩
+- Normalizes URLs for more reliable deduplication and ignores non-http(s) links (`mailto:`, `javascript:`, `tel:`). 🔗
 - Docker support. 🐳
 
 ## 📋 Requirements
