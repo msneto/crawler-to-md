@@ -123,6 +123,93 @@ class Scraper:
             metadata["error_message"] = error_message
         return json.dumps(metadata)
 
+    def _extract_links_from_soup(self, soup: BeautifulSoup, url: str):
+        """
+        Extract and filter valid links from an already parsed HTML soup.
+
+        Args:
+            soup (BeautifulSoup): Parsed HTML document.
+            url (str): Base URL used to resolve relative links.
+
+        Returns:
+            set[str]: Unique set of valid normalized links.
+        """
+        links = []
+        for anchor in soup.find_all("a", href=True):
+            if isinstance(anchor, Tag):
+                href = anchor.get("href")
+                if href:
+                    if isinstance(href, list):
+                        href = href[0]
+                    links.append(urljoin(url, str(href)))
+
+        filtered_links = [
+            urldefrag(link)[0]
+            for link in links
+            if self.is_valid_link(urldefrag(link)[0])
+        ]
+        logger.debug(f"Found {len(filtered_links)} valid links on {url}")
+        return set(filtered_links)
+
+    def _scrape_page_from_soup(self, soup: BeautifulSoup, url: str):
+        """
+        Scrape Markdown content and metadata from an already parsed HTML soup.
+
+        Args:
+            soup (BeautifulSoup): Parsed HTML document.
+            url (str): The URL being scraped.
+
+        Returns:
+            tuple[str | None, dict | None]: Scraped markdown and metadata.
+        """
+        logger.info(f"Scraping page {url}")
+
+        try:
+            if self.include_filters:
+                new_soup = BeautifulSoup("", "html.parser")
+                if soup.find("body"):
+                    body = new_soup.new_tag("body")
+                    new_soup.append(body)
+                else:
+                    body = new_soup
+
+                elements = []
+                for selector in self.include_filters:
+                    elements.extend(self._find_elements(soup, selector))
+
+                for element in elements:
+                    body.append(copy.copy(element))
+                soup = new_soup
+
+            for selector in self.exclude_filters:
+                for element in self._find_elements(soup, selector):
+                    element.decompose()
+
+            title = soup.title.string if soup.title else ""
+            metadata = {"title": title}
+
+            filtered_html = str(soup)
+            with tempfile.NamedTemporaryFile(
+                mode="w+", delete=False, suffix=".html"
+            ) as tmp:
+                tmp.write(filtered_html)
+                tmp_path = tmp.name
+
+            markdown = str(MarkItDown().convert(tmp_path))
+
+            os.remove(tmp_path)
+
+            if not markdown.strip():
+                logger.warning("No content scraped from %s", url)
+                return None, None
+
+            logger.debug("Successfully scraped content and metadata from %s", url)
+            return markdown, metadata
+
+        except Exception as e:
+            logger.error("Error scraping %s: %s", url, e)
+            return None, None
+
     def is_valid_link(self, link):
         """
         Check if the given link is valid for scraping.
@@ -174,27 +261,8 @@ class Scraper:
             else:
                 content = html
 
-            # Parse the content using BeautifulSoup
             soup = BeautifulSoup(content, "html.parser")
-            # Extract all anchor tags and join the URLs
-            links = []
-            for a in soup.find_all("a", href=True):
-                if isinstance(a, Tag):
-                    href = a.get("href")
-                    if href:
-                        if isinstance(href, list):
-                            href = href[0]
-                        links.append(urljoin(url, str(href)))
-
-            # Remove fragments and filter valid links
-            links = [
-                urldefrag(link)[0]
-                for link in links
-                if self.is_valid_link(urldefrag(link)[0])
-            ]
-            # Log the number of valid links found
-            logger.debug(f"Found {len(links)} valid links on {url}")
-            return set(links)
+            return self._extract_links_from_soup(soup, url)
         except requests.RequestException as e:
             logger.error(f"Error fetching {url}: {e}")
             return []
@@ -211,62 +279,8 @@ class Scraper:
         Returns:
             tuple: A tuple containing the extracted content and metadata of the page.
         """
-        logger.info(f"Scraping page {url}")
-
-        try:
-            # Parse the content using BeautifulSoup
-            soup = BeautifulSoup(html, "html.parser")
-
-            if self.include_filters:
-                # Create a new soup to hold the included elements
-                new_soup = BeautifulSoup("", "html.parser")
-                # Ensure the new soup has a body tag if it's a full HTML document
-                if soup.find("body"):
-                    body = new_soup.new_tag("body")
-                    new_soup.append(body)
-                else:
-                    body = new_soup
-
-                elements = []
-                for selector in self.include_filters:
-                    elements.extend(self._find_elements(soup, selector))
-
-                # Append a copy of each element to the new soup to maintain structure
-                for el in elements:
-                    body.append(copy.copy(el))
-                soup = new_soup
-
-            for selector in self.exclude_filters:
-                for element in self._find_elements(soup, selector):
-                    element.decompose()
-
-            # Extract title from the page
-            title = soup.title.string if soup.title else ""
-
-            metadata = {"title": title}
-
-            filtered_html = str(soup)
-            # Convert the HTML to Markdown
-            with tempfile.NamedTemporaryFile(
-                mode="w+", delete=False, suffix=".html"
-            ) as tmp:
-                tmp.write(filtered_html)
-                tmp_path = tmp.name
-
-            markdown = str(MarkItDown().convert(tmp_path))
-
-            os.remove(tmp_path)
-
-            if not markdown.strip():
-                logger.warning("No content scraped from %s", url)
-                return None, None
-
-            logger.debug("Successfully scraped content and metadata from %s", url)
-            return markdown, metadata
-
-        except Exception as e:
-            logger.error(f"Error scraping {url}: {e}")
-            return None, None
+        soup = BeautifulSoup(html, "html.parser")
+        return self._scrape_page_from_soup(soup, url)
 
     def start_scraping(self, url=None, urls_list=None):
         """
@@ -395,8 +409,14 @@ class Scraper:
                 # Extract the HTML content from the response
                 html = response.text
 
+                # Parse once and reuse for extraction and link discovery
+                soup = BeautifulSoup(html, "html.parser")
+                discovered_links = set()
+                if not urls_list:
+                    discovered_links = self._extract_links_from_soup(soup, url)
+
                 # Scrape the page for content and metadata
-                content, metadata = self.scrape_page(html, url)
+                content, metadata = self._scrape_page_from_soup(soup, url)
 
                 # Insert or update scraped data in the database
                 if content is None:
@@ -415,7 +435,7 @@ class Scraper:
                 # Fetch and insert new links found on the page,
                 # if not working from a predefined list
                 if not urls_list:
-                    new_links = self.fetch_links(html=html, url=url)
+                    new_links = discovered_links
 
                     # Count and insert new links into the database in batch
                     real_new_links_count = 0

@@ -268,7 +268,9 @@ def test_start_scraping_process(monkeypatch):
 
     monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
     monkeypatch.setattr(
-        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
     )
 
     class DummyResp:
@@ -323,7 +325,9 @@ def test_start_scraping_processes_unvisited_links_in_batches(monkeypatch):
 
     monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
     monkeypatch.setattr(
-        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
     )
 
     class DummyResp:
@@ -353,6 +357,60 @@ def test_start_scraping_processes_unvisited_links_in_batches(monkeypatch):
     assert db.get_visited_links_count() == 5
     assert all(limit == 2 for limit in db.unvisited_query_limits if limit is not None)
     assert len(db.unvisited_query_limits) >= 3
+
+
+def test_start_scraping_parses_each_page_once(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    scraper.unvisited_links_batch_size = 10
+
+    parse_count = {"count": 0}
+
+    from bs4 import BeautifulSoup as RealBeautifulSoup
+
+    def counting_bs4(*args, **kwargs):
+        parse_count["count"] += 1
+        return RealBeautifulSoup(*args, **kwargs)
+
+    monkeypatch.setattr("crawler_to_md.scraper.BeautifulSoup", counting_bs4)
+
+    monkeypatch.setattr(
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = '<html><body><a href="/n1">n1</a><a href="/n2">n2</a></body></html>'
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
+
+    class DummyTqdm:
+        def __init__(self, *a, **k):
+            self.total = k.get("total", 0)
+
+        def update(self, n):
+            pass
+
+        def refresh(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tqdm, "tqdm", lambda *a, **k: DummyTqdm(*a, **k))
+
+    scraper.start_scraping(url="http://example.com/start")
+
+    assert db.get_visited_links_count() == 3
+    assert parse_count["count"] == 3
 
 
 def test_scraper_proxy_initialization(monkeypatch):
@@ -430,7 +488,9 @@ def test_start_scraping_excludes_invalid_urls(monkeypatch):
 
     monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
     monkeypatch.setattr(
-        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
     )
 
     class DummyResp:
@@ -492,7 +552,9 @@ def test_start_scraping_filters_discovered_links(monkeypatch):
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     monkeypatch.setattr(
-        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
     )
 
     class DummyTqdm:
@@ -526,7 +588,9 @@ def test_start_scraping_continues_after_request_exception(monkeypatch):
 
     monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
     monkeypatch.setattr(
-        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
     )
 
     class DummyResp:
@@ -587,7 +651,9 @@ def test_start_scraping_auto_retries_failed_pages(monkeypatch):
 
     monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
     monkeypatch.setattr(
-        Scraper, "scrape_page", lambda self, html, url: ("# OK", {"title": "Retried"})
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# OK", {"title": "Retried"}),
     )
 
     class DummyResp:
@@ -631,7 +697,9 @@ def test_start_scraping_passes_timeout_to_get(monkeypatch):
 
     monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
     monkeypatch.setattr(
-        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+        Scraper,
+        "_scrape_page_from_soup",
+        lambda self, soup, url: ("# MD", {"url": url}),
     )
 
     call_kwargs = {}
