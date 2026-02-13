@@ -20,6 +20,7 @@ Primary target profile:
 - Completed: Task 2.3 (single MarkItDown instance reused per scrape run)
 - Completed: Task 2.4 (URL normalization + stricter scope/scheme filtering)
 - Completed: Task 2.5 (explicit database lifecycle with deterministic close)
+- Completed: Task 2.6 (idempotent logging setup without handler duplication)
 
 ---
 

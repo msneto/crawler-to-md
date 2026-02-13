@@ -6,6 +6,9 @@ import coloredlogs
 from tqdm import tqdm
 
 logger = Logger("tmp")
+_coloredlogs_installed = False
+_MANAGED_TQDM_HANDLER_ATTR = "_crawler_to_md_tqdm_handler"
+
 
 class TqdmHandler(logging.StreamHandler):
     """
@@ -13,6 +16,7 @@ class TqdmHandler(logging.StreamHandler):
     This handler allows log messages to be displayed over tqdm progress bars without
     interrupting them.
     """
+
     def emit(self, record):
         """
         Emit a log record.
@@ -32,6 +36,7 @@ class TqdmHandler(logging.StreamHandler):
             # Handle any errors that occur during logging
             self.handleError(record)
 
+
 def setup_logging(log_level: str = "WARN"):
     """
     Sets up logging with a custom handler and formatter.
@@ -45,11 +50,10 @@ def setup_logging(log_level: str = "WARN"):
         Defaults to "WARN".
     """
     global logger
+    global _coloredlogs_installed
 
     # Get the root logger
     logger = logging.getLogger()
-    # Create an instance of the custom TqdmHandler
-    handler = TqdmHandler()
     # Define a formatter with a specific format string, including colored output
     # Updated to show the filename and line number instead of hostname
     formatter = coloredlogs.ColoredFormatter(
@@ -58,14 +62,31 @@ def setup_logging(log_level: str = "WARN"):
             "%(levelname)s %(message)s"
         )
     )
-    # Set the formatter for the handler
-    handler.setFormatter(formatter)
-    # Add the custom handler to the logger
-    logger.addHandler(handler)
+
+    managed_handler = None
+    for existing_handler in logger.handlers:
+        if getattr(existing_handler, _MANAGED_TQDM_HANDLER_ATTR, False):
+            managed_handler = existing_handler
+            break
+
+    if managed_handler is None:
+        # Create an instance of the custom TqdmHandler
+        managed_handler = TqdmHandler()
+        setattr(managed_handler, _MANAGED_TQDM_HANDLER_ATTR, True)
+        # Add the custom handler to the logger once
+        logger.addHandler(managed_handler)
+
+    # Always refresh formatter to keep behavior consistent
+    managed_handler.setFormatter(formatter)
+
     # Set the logger's level to the specified log level
     logger.setLevel(log_level)
-    # Install coloredlogs with the specified log level and logger
-    coloredlogs.install(level=log_level, logger=logger)
+
+    # Install coloredlogs once for this logger lifecycle
+    if not _coloredlogs_installed:
+        coloredlogs.install(level=log_level, logger=logger)
+        _coloredlogs_installed = True
+
 
 def get_logger():
     """
