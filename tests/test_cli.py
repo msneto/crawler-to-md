@@ -65,6 +65,7 @@ def test_cli_proxy_option(monkeypatch, tmp_path):
         proxy=None,
         include_filters=None,
         exclude_filters=None,
+        timeout=None,
     ):
         """
         Fake initializer to capture proxy argument.
@@ -72,28 +73,28 @@ def test_cli_proxy_option(monkeypatch, tmp_path):
         Args:
             proxy (str, optional): Proxy URL.
         """
-        captured['proxy'] = proxy
+        captured["proxy"] = proxy
 
-    monkeypatch.setattr(Scraper, '__init__', fake_init)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
+    cache_folder = tmp_path / "cache"
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '--proxy',
-        'http://proxy:8080',
+        "--proxy",
+        "http://proxy:8080",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('proxy') == 'http://proxy:8080'
+    assert captured.get("proxy") == "http://proxy:8080"
 
 
 def test_cli_proxy_short_option(monkeypatch, tmp_path):
@@ -110,6 +111,7 @@ def test_cli_proxy_short_option(monkeypatch, tmp_path):
         proxy=None,
         include_filters=None,
         exclude_filters=None,
+        timeout=None,
     ):
         """
         Fake initializer to capture proxy argument.
@@ -117,28 +119,28 @@ def test_cli_proxy_short_option(monkeypatch, tmp_path):
         Args:
             proxy (str, optional): Proxy URL.
         """
-        captured['proxy'] = proxy
+        captured["proxy"] = proxy
 
-    monkeypatch.setattr(Scraper, '__init__', fake_init)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
+    cache_folder = tmp_path / "cache"
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '-p',
-        'http://proxy:8080',
+        "-p",
+        "http://proxy:8080",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('proxy') == 'http://proxy:8080'
+    assert captured.get("proxy") == "http://proxy:8080"
 
 
 def test_cli_socks_proxy(monkeypatch, tmp_path):
@@ -155,6 +157,7 @@ def test_cli_socks_proxy(monkeypatch, tmp_path):
         proxy=None,
         include_filters=None,
         exclude_filters=None,
+        timeout=None,
     ):
         """
         Fake initializer to capture proxy argument.
@@ -162,48 +165,48 @@ def test_cli_socks_proxy(monkeypatch, tmp_path):
         Args:
             proxy (str, optional): Proxy URL.
         """
-        captured['proxy'] = proxy
+        captured["proxy"] = proxy
 
-    monkeypatch.setattr(Scraper, '__init__', fake_init)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
+    cache_folder = tmp_path / "cache"
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '--proxy',
-        'socks5://localhost:9050',
+        "--proxy",
+        "socks5://localhost:9050",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('proxy') == 'socks5://localhost:9050'
+    assert captured.get("proxy") == "socks5://localhost:9050"
 
 
 def test_cli_proxy_error(monkeypatch, tmp_path):
     def fake_init(*a, **k):
-        raise ValueError('Proxy unreachable')
+        raise ValueError("Proxy unreachable")
 
-    monkeypatch.setattr(Scraper, '__init__', fake_init)
-    cache_folder = tmp_path / 'cache'
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    cache_folder = tmp_path / "cache"
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '--proxy',
-        'http://proxy:8080',
+        "--proxy",
+        "http://proxy:8080",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     with pytest.raises(SystemExit):
         cli.main()
 
@@ -229,6 +232,7 @@ def test_cli_include_exclude_options(monkeypatch, tmp_path):
         proxy=None,
         include_filters=None,
         exclude_filters=None,
+        timeout=None,
     ):
         """
         Fake initializer to capture include/exclude arguments.
@@ -237,32 +241,32 @@ def test_cli_include_exclude_options(monkeypatch, tmp_path):
             include_filters (list, optional): Selectors to include.
             exclude_filters (list, optional): Selectors to exclude.
         """
-        captured['include_filters'] = include_filters
-        captured['exclude_filters'] = exclude_filters
+        captured["include_filters"] = include_filters
+        captured["exclude_filters"] = exclude_filters
 
-    monkeypatch.setattr(Scraper, '__init__', fake_init)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
+    cache_folder = tmp_path / "cache"
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '--include',
-        'p',
-        '--exclude',
-        '.remove',
+        "--include",
+        "p",
+        "--exclude",
+        ".remove",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('include_filters') == ['p']
-    assert captured.get('exclude_filters') == ['.remove']
+    assert captured.get("include_filters") == ["p"]
+    assert captured.get("exclude_filters") == [".remove"]
 
 
 def test_cli_include_exclude_short_options(monkeypatch, tmp_path):
@@ -286,6 +290,7 @@ def test_cli_include_exclude_short_options(monkeypatch, tmp_path):
         proxy=None,
         include_filters=None,
         exclude_filters=None,
+        timeout=None,
     ):
         """
         Capture include and exclude selectors from short options.
@@ -294,32 +299,32 @@ def test_cli_include_exclude_short_options(monkeypatch, tmp_path):
             include_filters (list, optional): Selectors to include.
             exclude_filters (list, optional): Selectors to exclude.
         """
-        captured['include_filters'] = include_filters
-        captured['exclude_filters'] = exclude_filters
+        captured["include_filters"] = include_filters
+        captured["exclude_filters"] = exclude_filters
 
-    monkeypatch.setattr(Scraper, '__init__', fake_init)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
+    cache_folder = tmp_path / "cache"
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '-i',
-        '#keep',
-        '-x',
-        'span',
+        "-i",
+        "#keep",
+        "-x",
+        "span",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('include_filters') == ['#keep']
-    assert captured.get('exclude_filters') == ['span']
+    assert captured.get("include_filters") == ["#keep"]
+    assert captured.get("exclude_filters") == ["span"]
 
 
 def test_cli_include_url_option(monkeypatch, tmp_path):
@@ -343,6 +348,7 @@ def test_cli_include_url_option(monkeypatch, tmp_path):
         proxy=None,
         include_filters=None,
         exclude_filters=None,
+        timeout=None,
     ):
         """
         Capture include URL patterns argument.
@@ -350,92 +356,179 @@ def test_cli_include_url_option(monkeypatch, tmp_path):
         Args:
             include_url_patterns (list): URL substrings to include.
         """
-        captured['include_url_patterns'] = include_url_patterns
+        captured["include_url_patterns"] = include_url_patterns
 
-    monkeypatch.setattr(Scraper, '__init__', fake_init)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
+    cache_folder = tmp_path / "cache"
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '--include-url',
-        '/blog',
+        "--include-url",
+        "/blog",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('include_url_patterns') == ['/blog']
+    assert captured.get("include_url_patterns") == ["/blog"]
 
 
 def test_cli_overwrite_cache(monkeypatch, tmp_path):
     captured = {}
 
     def fake_init(self, db_path):
-        captured['exists'] = os.path.exists(db_path)
-        self.conn = sqlite3.connect(':memory:')
+        captured["exists"] = os.path.exists(db_path)
+        self.conn = sqlite3.connect(":memory:")
 
-    monkeypatch.setattr(DatabaseManager, '__init__', fake_init)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
+    monkeypatch.setattr(DatabaseManager, "__init__", fake_init)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
-    db_name = utils.url_to_filename('http://example.com') + '.sqlite'
+    cache_folder = tmp_path / "cache"
+    db_name = utils.url_to_filename("http://example.com") + ".sqlite"
     db_path = cache_folder / db_name
     cache_folder.mkdir()
-    db_path.write_text('dummy')
+    db_path.write_text("dummy")
 
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '--overwrite-cache',
+        "--overwrite-cache",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('exists') is False
+    assert captured.get("exists") is False
 
 
 def test_cli_overwrite_cache_short_option(monkeypatch, tmp_path):
     captured = {}
 
     def fake_init(self, db_path):
-        captured['exists'] = os.path.exists(db_path)
-        self.conn = sqlite3.connect(':memory:')
+        captured["exists"] = os.path.exists(db_path)
+        self.conn = sqlite3.connect(":memory:")
 
-    monkeypatch.setattr(DatabaseManager, '__init__', fake_init)
-    monkeypatch.setattr(ExportManager, 'export_to_markdown', lambda *a, **k: None)
-    monkeypatch.setattr(ExportManager, 'export_to_json', lambda *a, **k: None)
-    monkeypatch.setattr(Scraper, 'start_scraping', lambda *a, **k: None)
+    monkeypatch.setattr(DatabaseManager, "__init__", fake_init)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
 
-    cache_folder = tmp_path / 'cache'
-    db_name = utils.url_to_filename('http://example.com') + '.sqlite'
+    cache_folder = tmp_path / "cache"
+    db_name = utils.url_to_filename("http://example.com") + ".sqlite"
     db_path = cache_folder / db_name
     cache_folder.mkdir()
-    db_path.write_text('dummy')
+    db_path.write_text("dummy")
 
     args = [
-        'prog',
-        '--url',
-        'http://example.com',
-        '--output-folder',
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
         str(tmp_path),
-        '--cache-folder',
+        "--cache-folder",
         str(cache_folder),
-        '-w',
+        "-w",
     ]
-    monkeypatch.setattr(sys, 'argv', args)
+    monkeypatch.setattr(sys, "argv", args)
     cli.main()
-    assert captured.get('exists') is False
+    assert captured.get("exists") is False
 
+
+def test_cli_timeout_option_passed_to_scraper(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_init(
+        self,
+        base_url,
+        exclude_patterns,
+        include_url_patterns,
+        db_manager,
+        rate_limit=0,
+        delay=0,
+        proxy=None,
+        include_filters=None,
+        exclude_filters=None,
+        timeout=None,
+    ):
+        captured["timeout"] = timeout
+
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    cache_folder = tmp_path / "cache"
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(cache_folder),
+        "--timeout",
+        "2.5",
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+    assert captured.get("timeout") == 2.5
+
+
+def test_cli_timeout_default_passed_to_scraper(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_init(
+        self,
+        base_url,
+        exclude_patterns,
+        include_url_patterns,
+        db_manager,
+        rate_limit=0,
+        delay=0,
+        proxy=None,
+        include_filters=None,
+        exclude_filters=None,
+        timeout=None,
+    ):
+        captured["timeout"] = timeout
+
+    monkeypatch.setattr(Scraper, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    cache_folder = tmp_path / "cache"
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(cache_folder),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+    assert captured.get("timeout") == 10
+
+
+def test_cli_help_mentions_timeout(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["prog", "--help"])
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    help_output = capsys.readouterr().out
+    assert "--timeout" in help_output

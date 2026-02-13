@@ -26,6 +26,7 @@ class Scraper:
         db_manager: DatabaseManager,
         rate_limit=0,
         delay=0,
+        timeout=10,
         proxy=None,
         include_filters=None,
         exclude_filters=None,
@@ -41,6 +42,7 @@ class Scraper:
             db_manager (DatabaseManager): The database manager object.
             rate_limit (int): Maximum number of requests per minute.
             delay (float): Delay between requests in seconds.
+            timeout (float): Request timeout in seconds.
             proxy (str, optional): Proxy URL for HTTP or SOCKS requests.
             include_filters (list, optional): CSS-like selectors (#id, .class, tag)
                 of elements to include before Markdown conversion.
@@ -57,6 +59,7 @@ class Scraper:
         self.db_manager = db_manager
         self.rate_limit = rate_limit
         self.delay = delay
+        self.timeout = timeout
         self.session = requests.Session()
         if proxy:
             self.session.proxies.update({"http": proxy, "https": proxy})
@@ -76,7 +79,7 @@ class Scraper:
             ValueError: If the proxy cannot fetch the base URL.
         """
         try:
-            self.session.head(self.base_url, timeout=5)
+            self.session.head(self.base_url, timeout=self.timeout)
         except requests.RequestException as exc:
             raise ValueError(f"Proxy unreachable: {exc}") from exc
 
@@ -157,7 +160,7 @@ class Scraper:
         try:
             if not html:
                 # Send a GET request to the URL
-                response = self.session.get(url)
+                response = self.session.get(url, timeout=self.timeout)
                 if response.status_code != 200:
                     logger.warning(
                         f"Failed to fetch {url} with status code {response.status_code}"
@@ -350,7 +353,7 @@ class Scraper:
 
                 # Attempt to fetch the page content
                 try:
-                    response = self.session.get(url)
+                    response = self.session.get(url, timeout=self.timeout)
                     # Increment request count for rate limiting
                     request_count += 1
                 except requests.RequestException as exc:

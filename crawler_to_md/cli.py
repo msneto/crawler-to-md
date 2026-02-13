@@ -29,7 +29,6 @@ def main():
     """
     logger.info("Starting the web scraper application.")
 
-
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Web Scraper to Markdown")
     parser.add_argument("--url", "-u", help="Base URL to start scraping")
@@ -109,6 +108,12 @@ def main():
         default=None,
     )
     parser.add_argument(
+        "--timeout",
+        type=float,
+        help="Request timeout in seconds",
+        default=10,
+    )
+    parser.add_argument(
         "--no-markdown",
         action="store_true",
         help="Disable generation of the compiled Markdown file",
@@ -144,11 +149,9 @@ def main():
     try:
         import argcomplete
 
-
         argcomplete.autocomplete(parser)
     except ImportError:
         pass
-
 
     args = parser.parse_args()
     logger.debug(f"Command line arguments parsed: {args}")
@@ -165,12 +168,10 @@ def main():
             with open(args.urls_file, "r") as file:
                 urls_list = [line.strip() for line in file.readlines()]
 
-
         urls_list = utils.deduplicate_list(urls_list)
         args.url = None  # Ensure args.url is defined even if not used
     else:
         urls_list = []
-
 
     if not args.url and not urls_list:
         parser.error("No URL provided. Please provide either --url or --urls-file.")
@@ -221,6 +222,7 @@ def main():
             db_manager=db_manager,
             rate_limit=args.rate_limit,
             delay=args.delay,
+            timeout=args.timeout,
             proxy=args.proxy,
             include_filters=args.include,
             exclude_filters=args.exclude,
@@ -238,7 +240,6 @@ def main():
     # After the scraping process is completed in the main function
     export_manager = ExportManager(db_manager, args.title)
     logger.info("ExportManager initialized.")
-
 
     if not args.no_markdown:
         export_manager.export_to_markdown(os.path.join(output, f"{output_name}.md"))

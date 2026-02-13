@@ -264,7 +264,7 @@ def test_start_scraping_process(monkeypatch):
         content = b"<html></html>"
         text = "<html></html>"
 
-    monkeypatch.setattr(scraper.session, "get", lambda url: DummyResp())
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
         def __init__(self, *a, **k):
@@ -372,7 +372,7 @@ def test_start_scraping_excludes_invalid_urls(monkeypatch):
         content = b"<html></html>"
         text = "<html></html>"
 
-    monkeypatch.setattr(scraper.session, "get", lambda url: DummyResp())
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
         def __init__(self, *a, **k):
@@ -422,7 +422,7 @@ def test_start_scraping_filters_discovered_links(monkeypatch):
         headers = {"content-type": "text/html"}
         text = html
 
-    monkeypatch.setattr(scraper.session, "get", lambda url: DummyResp())
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     monkeypatch.setattr(
         Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
@@ -467,7 +467,7 @@ def test_start_scraping_continues_after_request_exception(monkeypatch):
         headers = {"content-type": "text/html"}
         text = "<html></html>"
 
-    def fake_get(url):
+    def fake_get(url, **kwargs):
         if url == "http://example.com/fail":
             raise requests.RequestException("network error")
         return DummyResp()
@@ -528,7 +528,7 @@ def test_start_scraping_auto_retries_failed_pages(monkeypatch):
         headers = {"content-type": "text/html"}
         text = "<html></html>"
 
-    monkeypatch.setattr(scraper.session, "get", lambda url: DummyResp())
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
         def __init__(self, *a, **k):
@@ -550,3 +550,98 @@ def test_start_scraping_auto_retries_failed_pages(monkeypatch):
     assert len(db.pages) == 1
     assert db.pages[0][0] == "http://example.com/retry"
     assert db.pages[0][1] == "# OK"
+
+
+def test_start_scraping_passes_timeout_to_get(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    setattr(scraper, "timeout", 10)
+
+    monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
+    monkeypatch.setattr(
+        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+    )
+
+    call_kwargs = {}
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html></html>"
+
+    def fake_get(url, **kwargs):
+        call_kwargs.update(kwargs)
+        return DummyResp()
+
+    monkeypatch.setattr(scraper.session, "get", fake_get)
+
+    class DummyTqdm:
+        def __init__(self, *a, **k):
+            self.total = k.get("total", 0)
+
+        def update(self, n):
+            pass
+
+        def refresh(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tqdm, "tqdm", lambda *a, **k: DummyTqdm(*a, **k))
+
+    scraper.start_scraping(url="http://example.com/page")
+
+    assert call_kwargs.get("timeout") == 10
+
+
+def test_fetch_links_passes_timeout_when_fetching_html(monkeypatch):
+    db = DummyDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    setattr(scraper, "timeout", 10)
+
+    call_kwargs = {}
+
+    class DummyResp:
+        status_code = 200
+        text = '<html><body><a href="/page">P</a></body></html>'
+
+    def fake_get(url, **kwargs):
+        call_kwargs.update(kwargs)
+        return DummyResp()
+
+    monkeypatch.setattr(scraper.session, "get", fake_get)
+
+    links = scraper.fetch_links(url="http://example.com", html=None)
+
+    assert "http://example.com/page" in links
+    assert call_kwargs.get("timeout") == 10
+
+
+def test_proxy_check_uses_timeout_default(monkeypatch):
+    captured = {}
+
+    def fake_head(self, url, timeout=5):
+        captured["timeout"] = timeout
+
+    monkeypatch.setattr(requests.Session, "head", fake_head)
+
+    Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=DummyDB(),
+        proxy="http://proxy:8080",
+    )
+
+    assert captured.get("timeout") == 10
