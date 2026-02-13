@@ -654,3 +654,70 @@ def test_cli_minify_with_no_markdown_has_no_markdown_side_effects(
     calls = _run_cli(monkeypatch, tmp_path, ["--minify", "--no-markdown"])
     assert calls["md"] is False
     assert calls["json"] is True
+
+
+def test_cli_output_dir_alias(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_export_markdown(self, path):
+        captured["markdown_path"] = path
+
+    monkeypatch.setattr(ExportManager, "export_to_markdown", fake_export_markdown)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+
+    output_dir = tmp_path / "alias-output"
+    cache_dir = tmp_path / "cache"
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-dir",
+        str(output_dir),
+        "--cache-dir",
+        str(cache_dir),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+
+    assert str(output_dir) in captured["markdown_path"]
+
+
+def test_cli_cache_dir_alias(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_db_init(self, db_path):
+        captured["db_path"] = db_path
+        self.conn = sqlite3.connect(":memory:")
+
+    monkeypatch.setattr(DatabaseManager, "__init__", fake_db_init)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+
+    output_dir = tmp_path / "out"
+    cache_dir = tmp_path / "alias-cache"
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(output_dir),
+        "--cache-dir",
+        str(cache_dir),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+
+    assert captured["db_path"].startswith(str(cache_dir))
+
+
+def test_cli_help_mentions_output_and_cache_dir_aliases(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["prog", "--help"])
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    help_output = capsys.readouterr().out
+    assert "--output-dir" in help_output
+    assert "--cache-dir" in help_output

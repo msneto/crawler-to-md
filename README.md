@@ -53,15 +53,15 @@ pip install .
 Start scraping with the following command:
 
 ```shell
-crawler-to-md --url <URL> [--output-folder ./output] [--cache-folder ~/.cache/crawler-to-md] [--overwrite-cache|-w] [--base-url <BASE_URL>] [--exclude-url <KEYWORD_IN_URL>] [--include-url <KEYWORD_IN_URL>] [--title <TITLE>] [--urls-file <URLS_FILE>] [--timeout <SECONDS>] [-p <PROXY_URL>] [--no-markdown] [--no-json] [--minify|-m]
+crawler-to-md --url <URL> [--output-folder|--output-dir ./output] [--cache-folder|--cache-dir ~/.cache/crawler-to-md] [--overwrite-cache|-w] [--base-url <BASE_URL>] [--exclude-url <KEYWORD_IN_URL>] [--include-url <KEYWORD_IN_URL>] [--title <TITLE>] [--urls-file <URLS_FILE>] [--timeout <SECONDS>] [-p <PROXY_URL>] [--no-markdown] [--no-json] [--minify|-m]
 ```
 
 Options:
 
 - `--url`, `-u`: The starting URL. 🌍
 - `--urls-file`: Path to a file containing URLs to scrape, one URL per line. If '-', read from stdin. 📁
-- `--output-folder`, `-o`: Where to save Markdown files (default: `./output`). 📂
-- `--cache-folder`, `-c`: Where to store the database (default: `~/.cache/crawler-to-md`). 💾
+- `--output-folder`, `--output-dir`, `-o`: Where to save Markdown files (default: `./output`). 📂
+- `--cache-folder`, `--cache-dir`, `-c`: Where to store the database (default: `~/.cache/crawler-to-md`). 💾
 - `--overwrite-cache`, `-w`: Overwrite existing cache database before scraping. 🧹
 - `--base-url`, `-b`: Filter links by base URL (default: URL's base). 🔎
 - `--title`, `-t`: Final title of the markdown file. Defaults to the URL. 🏷️
@@ -79,6 +79,42 @@ Options:
 - `--exclude`, `-x`: CSS-like selector (#id, .class, tag) to exclude before Markdown conversion (repeatable). 🚫
 
 One of the `--url` or `--urls-file` options is required.
+
+### ✅ Common commands
+
+Basic crawl:
+
+```shell
+crawler-to-md --url https://www.example.com
+```
+
+AI-ready Markdown only (compact output):
+
+```shell
+crawler-to-md --url https://www.example.com --minify --no-json
+```
+
+Ignore cache and rescrape from scratch:
+
+```shell
+crawler-to-md --url https://www.example.com --overwrite-cache
+```
+
+Read URLs from a file:
+
+```shell
+crawler-to-md --urls-file urls.txt
+```
+
+### 🗂️ Output behavior
+
+- Compiled Markdown and JSON outputs are overwritten if files already exist.
+- `--export-individual` writes per-page files under the `files/` subfolder.
+
+### 🧠 Minify mode
+
+`--minify` is designed for AI ingestion/content backup and not for rendering fidelity.
+It keeps fenced code blocks intact and compacts Markdown outside fences.
 
 ### 📚 Log level
 

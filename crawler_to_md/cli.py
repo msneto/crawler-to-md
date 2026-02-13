@@ -39,12 +39,14 @@ def main():
     )
     parser.add_argument(
         "--output-folder",
+        "--output-dir",
         "-o",
         help="Output folder for the markdown file",
         default="./output",
     )
     parser.add_argument(
         "--cache-folder",
+        "--cache-dir",
         "-c",
         help="Cache folder for storing database",
         default="~/.cache/crawler-to-md",
