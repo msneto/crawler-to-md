@@ -532,3 +532,13 @@ def test_cli_help_mentions_timeout(monkeypatch, capsys):
 
     help_output = capsys.readouterr().out
     assert "--timeout" in help_output
+
+
+def test_cli_help_mentions_simple_selector_forms(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["prog", "--help"])
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    help_output = capsys.readouterr().out
+    assert "#id, .class, tag only" in help_output

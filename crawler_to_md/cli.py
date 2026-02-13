@@ -130,8 +130,8 @@ def main():
         "-i",
         action="append",
         help=(
-            "CSS-like selector (#id, .class, tag) to include before Markdown "
-            "conversion. Repeatable."
+            "CSS-like selector (#id, .class, tag only) to include before "
+            "Markdown conversion. Repeatable."
         ),
         default=[],
     )
@@ -140,8 +140,8 @@ def main():
         "-x",
         action="append",
         help=(
-            "CSS-like selector (#id, .class, tag) to exclude before Markdown "
-            "conversion. Repeatable."
+            "CSS-like selector (#id, .class, tag only) to exclude before "
+            "Markdown conversion. Repeatable."
         ),
         default=[],
     )
