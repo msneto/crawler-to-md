@@ -178,25 +178,28 @@ class ExportManager:
             if content is None:
                 continue  # Skip empty pages
 
-            filtered_metadata = {
-                k: v
-                for k, v in self._safe_metadata_dict(metadata).items()
-                if v is not None
-            }
-
-            # Prepare metadata as an HTML comment
-            metadata_content = "<!--\n"
-            metadata_content += f"URL: {url}\n"
-            for key, value in filtered_metadata.items():
-                metadata_content += f"{key}: {value}\n"
-            metadata_content += "-->"
-
             # Adjust headers for subsequent files and add metadata
             adjusted_content = self._adjust_headers(content)
 
-            final_content += (
-                "\n" + metadata_content + "\n\n" + adjusted_content + "\n---"
-            )  # Add a separator and metadata
+            if self.minify:
+                final_content += "\n" + adjusted_content
+            else:
+                filtered_metadata = {
+                    k: v
+                    for k, v in self._safe_metadata_dict(metadata).items()
+                    if v is not None
+                }
+
+                # Prepare metadata as an HTML comment
+                metadata_content = "<!--\n"
+                metadata_content += f"URL: {url}\n"
+                for key, value in filtered_metadata.items():
+                    metadata_content += f"{key}: {value}\n"
+                metadata_content += "-->"
+
+                final_content += (
+                    "\n" + metadata_content + "\n\n" + adjusted_content + "\n---"
+                )  # Add a separator and metadata
 
             final_content = self._cleanup_markdown(final_content)
 

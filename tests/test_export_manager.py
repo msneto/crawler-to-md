@@ -330,7 +330,23 @@ def test_minify_on_keeps_separator_structure(tmp_path):
     exporter.export_to_markdown(str(md_path))
 
     content = md_path.read_text(encoding="utf-8")
+    assert "## A" in content
+    assert "## B" in content
     assert "\n---" not in content
+
+
+def test_non_minify_keeps_page_separator_lines(tmp_path):
+    db_path = tmp_path / "db.sqlite"
+    db = DatabaseManager(str(db_path))
+    db.insert_page("http://example.com/a", "# A", "{}")
+    db.insert_page("http://example.com/b", "# B", "{}")
+    exporter = ExportManager(db, title="Head", minify=False)
+
+    md_path = tmp_path / "out.md"
+    exporter.export_to_markdown(str(md_path))
+
+    content = md_path.read_text(encoding="utf-8")
+    assert "\n---" in content
 
 
 def test_minify_markdown_with_crlf_input_is_stable():
