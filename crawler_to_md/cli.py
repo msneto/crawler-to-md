@@ -126,6 +126,16 @@ def main():
         default=False,
     )
     parser.add_argument(
+        "--minify",
+        "-m",
+        action="store_true",
+        help=(
+            "Minify generated Markdown output (.md) for AI ingestion or content "
+            "backup (not rendering fidelity)."
+        ),
+        default=False,
+    )
+    parser.add_argument(
         "--include",
         "-i",
         action="append",
@@ -238,7 +248,7 @@ def main():
     output_name = utils.randomstring_to_filename(args.title)
 
     # After the scraping process is completed in the main function
-    export_manager = ExportManager(db_manager, args.title)
+    export_manager = ExportManager(db_manager, args.title, minify=args.minify)
     logger.info("ExportManager initialized.")
 
     if not args.no_markdown:

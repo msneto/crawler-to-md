@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 from . import log_setup
 from .database_manager import DatabaseManager
@@ -9,7 +10,7 @@ logger.name = "export_manager"
 
 
 class ExportManager:
-    def __init__(self, db_manager: DatabaseManager, title=None):
+    def __init__(self, db_manager: DatabaseManager, title=None, minify=False):
         """
         Initialize the ExportManager with a DatabaseManager instance.
 
@@ -18,6 +19,7 @@ class ExportManager:
         """
         self.db_manager = db_manager
         self.title = title
+        self.minify = minify
         logger.info("ExportManager initialized.")  # Add log message
 
     def _adjust_headers(self, content, level_increment=1):
@@ -59,6 +61,89 @@ class ExportManager:
         while "\n\n\n" in content:
             content = content.replace("\n\n\n", "\n\n")
         return content
+
+    def _line_starts_fence(self, line):
+        stripped = line.lstrip(" ")
+        if stripped.startswith("```"):
+            return "`"
+        if stripped.startswith("~~~"):
+            return "~"
+        return None
+
+    def _line_closes_fence(self, line, fence_char):
+        stripped = line.lstrip(" ")
+        if fence_char == "`":
+            return stripped.startswith("```")
+        return stripped.startswith("~~~")
+
+    def _strip_html_comments_from_line(self, line, in_comment):
+        processed = []
+        index = 0
+
+        while index < len(line):
+            if in_comment:
+                comment_end = line.find("-->", index)
+                if comment_end == -1:
+                    return "".join(processed), True
+                index = comment_end + 3
+                in_comment = False
+                continue
+
+            comment_start = line.find("<!--", index)
+            if comment_start == -1:
+                processed.append(line[index:])
+                break
+
+            processed.append(line[index:comment_start])
+            index = comment_start + 4
+            in_comment = True
+
+        return "".join(processed), in_comment
+
+    def _minify_markdown(self, content):
+        had_trailing_newline = content.endswith("\n")
+        lines = content.split("\n")
+        output_lines = []
+        in_fenced_code = False
+        fence_char = None
+        in_html_comment = False
+
+        for line in lines:
+            if in_fenced_code:
+                output_lines.append(line)
+                if self._line_closes_fence(line, fence_char):
+                    in_fenced_code = False
+                    fence_char = None
+                continue
+
+            current_fence_char = self._line_starts_fence(line)
+            if current_fence_char:
+                in_fenced_code = True
+                fence_char = current_fence_char
+                output_lines.append(line)
+                continue
+
+            stripped_line, in_html_comment = self._strip_html_comments_from_line(
+                line, in_html_comment
+            )
+
+            if stripped_line.endswith("  ") and not stripped_line.endswith("   "):
+                normalized_line = stripped_line
+            else:
+                normalized_line = stripped_line.rstrip(" \t")
+
+            if normalized_line.strip() == "":
+                continue
+
+            if re.fullmatch(r"-{3,}", normalized_line.strip()):
+                continue
+
+            output_lines.append(normalized_line)
+
+        minified = "\n".join(output_lines)
+        if had_trailing_newline and minified:
+            minified += "\n"
+        return minified
 
     def _safe_metadata_dict(self, metadata):
         """
@@ -114,6 +199,9 @@ class ExportManager:
             )  # Add a separator and metadata
 
             final_content = self._cleanup_markdown(final_content)
+
+        if self.minify:
+            final_content = self._minify_markdown(final_content)
 
         return final_content
 
@@ -194,6 +282,8 @@ class ExportManager:
 
             # Write the Markdown content
             with open(file_path, "w", encoding="utf-8") as file:
+                if self.minify:
+                    content = self._minify_markdown(content)
                 file.write(content)
                 logger.debug(f"Markdown exported to {file_path}")
 

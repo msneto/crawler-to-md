@@ -135,3 +135,247 @@ def test_export_individual_skips_none_content(tmp_path):
     assert not (tmp_path / "files" / "example.com" / "a.md").exists()
     assert (tmp_path / "files" / "example.com" / "b.md").exists()
     assert output_folder == str(tmp_path / "files")
+
+
+def test_minify_markdown_removes_blank_lines_and_trims_trailing_whitespace():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "A   \n\n\nB\t\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == "A\nB\n"
+
+
+def test_minify_markdown_preserves_hard_break_spaces():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "Line with break  \n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == "Line with break  \n"
+
+
+def test_minify_markdown_strips_html_comments_outside_code_blocks():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "A<!-- one -->B\n<!--\nmultiline\n-->\nC\n"
+    minified = exporter._minify_markdown(content)
+
+    assert "<!--" not in minified
+    assert minified == "AB\nC\n"
+
+
+def test_minify_markdown_preserves_fenced_code_exactly():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = (
+        "Before\n"
+        "```python\n"
+        "x = 1    \n"
+        "\n"
+        "<!-- keep in code -->\n"
+        "```\n"
+        "\n"
+        "    indented code    \n"
+        "After\n"
+    )
+
+    minified = exporter._minify_markdown(content)
+
+    assert "x = 1    " in minified
+    assert "<!-- keep in code -->" in minified
+
+
+def test_minify_markdown_keeps_leading_indentation_unchanged_outside_fences():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "  indented line\n\talso indented\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == content
+
+
+def test_minify_markdown_is_idempotent():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "A\n\n\n<!-- c -->\nB   \n"
+    once = exporter._minify_markdown(content)
+    twice = exporter._minify_markdown(once)
+
+    assert once == twice
+
+
+def test_export_to_markdown_minify_removes_metadata_comments(tmp_path):
+    db_path = tmp_path / "db.sqlite"
+    db = DatabaseManager(str(db_path))
+    db.insert_page("http://example.com/page", "# P\n\n\nText", json.dumps({"k": "v"}))
+    exporter = ExportManager(db, title="Head", minify=True)
+
+    md_path = tmp_path / "out.md"
+    exporter.export_to_markdown(str(md_path))
+
+    content = md_path.read_text(encoding="utf-8")
+    assert "<!--" not in content
+    assert "URL: http://example.com/page" not in content
+
+
+def test_export_individual_markdown_minifies_when_enabled(tmp_path):
+    db = DatabaseManager(":memory:")
+    db.insert_page(
+        "http://example.com/a",
+        "A   \n\n\n<!-- remove -->\nB\n",
+        "{}",
+    )
+    exporter = ExportManager(db, minify=True)
+
+    output_folder = exporter.export_individual_markdown(str(tmp_path))
+    output_file = tmp_path / "files" / "example.com" / "a.md"
+
+    content = output_file.read_text(encoding="utf-8")
+    assert content == "A\nB\n"
+    assert output_folder == str(tmp_path / "files")
+
+
+def test_minify_markdown_supports_tilde_fences():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "Before\n~~~md\nline    \n<!-- keep -->\n~~~\nAfter\n"
+    minified = exporter._minify_markdown(content)
+
+    assert "line    " in minified
+    assert "<!-- keep -->" in minified
+    assert minified == content
+
+
+def test_minify_markdown_supports_indented_fence_markers():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "Text\n   ```python\n<!-- keep -->\nx = 1    \n   ```\nDone\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == content
+
+
+def test_minify_markdown_unterminated_html_comment_drops_to_eof():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "A\n<!-- starts\nstill comment\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == "A\n"
+
+
+def test_minify_markdown_inline_comment_stripping_between_text():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "A <!--x--> B\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == "A  B\n"
+    assert exporter._minify_markdown(minified) == minified
+
+
+def test_minify_markdown_hard_break_precision():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "one \ntwo  \nthree   \nfour\t\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == "one\ntwo  \nthree\nfour\n"
+
+
+def test_minify_markdown_preserves_indented_code_after_list_context():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "1. Item\n\n    code line    \n    <!-- removed -->\n\nAfter\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == "1. Item\n    code line\nAfter\n"
+
+
+def test_minify_off_keeps_metadata_comments_in_compiled_markdown(tmp_path):
+    db_path = tmp_path / "db.sqlite"
+    db = DatabaseManager(str(db_path))
+    db.insert_page("http://example.com/page", "# P", json.dumps({"k": "v"}))
+    exporter = ExportManager(db, title="Head", minify=False)
+
+    md_path = tmp_path / "out.md"
+    exporter.export_to_markdown(str(md_path))
+
+    content = md_path.read_text(encoding="utf-8")
+    assert "<!--" in content
+    assert "URL: http://example.com/page" in content
+
+
+def test_minify_on_keeps_separator_structure(tmp_path):
+    db_path = tmp_path / "db.sqlite"
+    db = DatabaseManager(str(db_path))
+    db.insert_page("http://example.com/a", "# A", "{}")
+    db.insert_page("http://example.com/b", "# B", "{}")
+    exporter = ExportManager(db, title="Head", minify=True)
+
+    md_path = tmp_path / "out.md"
+    exporter.export_to_markdown(str(md_path))
+
+    content = md_path.read_text(encoding="utf-8")
+    assert "\n---" not in content
+
+
+def test_minify_markdown_with_crlf_input_is_stable():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "A\r\n\r\n<!-- x -->\r\nB\r\n"
+    once = exporter._minify_markdown(content)
+    twice = exporter._minify_markdown(once)
+
+    assert once == twice
+
+
+def test_minify_markdown_corpus_idempotence():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    fixtures = [
+        "A\n\n\nB\n",
+        "A <!--x--> B\n",
+        "```\ncode\n\n```\n",
+        "1. Item\n\n    code    \n",
+    ]
+
+    for fixture in fixtures:
+        once = exporter._minify_markdown(fixture)
+        twice = exporter._minify_markdown(once)
+        assert once == twice
+
+
+def test_minify_markdown_removes_hyphen_only_separator_lines():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "A\n---\n ---- \n-----\n--- note\nB\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == "A\n--- note\nB\n"
+
+
+def test_minify_markdown_keeps_hyphen_only_lines_inside_fences():
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, minify=True)
+
+    content = "```\n---\n----\n```\n"
+    minified = exporter._minify_markdown(content)
+
+    assert minified == content

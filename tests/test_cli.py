@@ -542,3 +542,115 @@ def test_cli_help_mentions_simple_selector_forms(monkeypatch, capsys):
 
     help_output = capsys.readouterr().out
     assert "#id, .class, tag only" in help_output
+
+
+def test_cli_minify_option_passed_to_export_manager(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_init(self, db_manager, title=None, minify=False):
+        captured["minify"] = minify
+        self.db_manager = db_manager
+        self.title = title
+        self.minify = minify
+
+    monkeypatch.setattr(ExportManager, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    cache_folder = tmp_path / "cache"
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(cache_folder),
+        "--minify",
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+
+    assert captured.get("minify") is True
+
+
+def test_cli_minify_short_option_passed_to_export_manager(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_init(self, db_manager, title=None, minify=False):
+        captured["minify"] = minify
+        self.db_manager = db_manager
+        self.title = title
+        self.minify = minify
+
+    monkeypatch.setattr(ExportManager, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    cache_folder = tmp_path / "cache"
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(cache_folder),
+        "-m",
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+
+    assert captured.get("minify") is True
+
+
+def test_cli_help_mentions_minify(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["prog", "--help"])
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    help_output = capsys.readouterr().out
+    assert "--minify" in help_output
+    assert "backup" in help_output
+    assert "rendering" in help_output
+
+
+def test_cli_minify_default_false(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_init(self, db_manager, title=None, minify=False):
+        captured["minify"] = minify
+        self.db_manager = db_manager
+        self.title = title
+        self.minify = minify
+
+    monkeypatch.setattr(ExportManager, "__init__", fake_init)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    cache_folder = tmp_path / "cache"
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(cache_folder),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+
+    assert captured.get("minify") is False
+
+
+def test_cli_minify_with_no_markdown_has_no_markdown_side_effects(
+    monkeypatch, tmp_path
+):
+    calls = _run_cli(monkeypatch, tmp_path, ["--minify", "--no-markdown"])
+    assert calls["md"] is False
+    assert calls["json"] is True
