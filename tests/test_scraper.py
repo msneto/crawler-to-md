@@ -18,7 +18,7 @@ class DummyDB(DatabaseManager):
     def insert_link(self, url, visited=False) -> bool:
         return True
 
-    def get_unvisited_links(self):
+    def get_unvisited_links(self, limit=None):
         return []
 
     def mark_link_visited(self, url):
@@ -201,6 +201,7 @@ class ListDB(DummyDB):
         self.links = []
         self.visited = set()
         self.pages = []
+        self.unvisited_query_limits = []
 
     def insert_link(self, url, visited=False) -> bool:
         urls = url if isinstance(url, list) else [url]
@@ -219,8 +220,12 @@ class ListDB(DummyDB):
                 count += 1
         return count
 
-    def get_unvisited_links(self):
-        return [(u,) for u in self.links if u not in self.visited]
+    def get_unvisited_links(self, limit=None):
+        self.unvisited_query_limits.append(limit)
+        unvisited = [(u,) for u in self.links if u not in self.visited]
+        if limit is None:
+            return unvisited
+        return unvisited[:limit]
 
     def mark_link_visited(self, url):
         self.visited.add(url)
@@ -294,6 +299,60 @@ def test_start_scraping_process(monkeypatch):
     assert db.get_links_count() == 1
     assert db.get_visited_links_count() == 1
     assert db.pages[0][0] == "http://example.com/page"
+
+
+def test_start_scraping_processes_unvisited_links_in_batches(monkeypatch):
+    db = ListDB()
+    db.insert_link(
+        [
+            "http://example.com/1",
+            "http://example.com/2",
+            "http://example.com/3",
+            "http://example.com/4",
+            "http://example.com/5",
+        ]
+    )
+
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    scraper.unvisited_links_batch_size = 2
+
+    monkeypatch.setattr(Scraper, "fetch_links", lambda self, url, html=None: set())
+    monkeypatch.setattr(
+        Scraper, "scrape_page", lambda self, html, url: ("# MD", {"url": url})
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html></html>"
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
+
+    class DummyTqdm:
+        def __init__(self, *a, **k):
+            self.total = k.get("total", 0)
+
+        def update(self, n):
+            pass
+
+        def refresh(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tqdm, "tqdm", lambda *a, **k: DummyTqdm(*a, **k))
+
+    scraper.start_scraping()
+
+    assert db.get_visited_links_count() == 5
+    assert all(limit == 2 for limit in db.unvisited_query_limits if limit is not None)
+    assert len(db.unvisited_query_limits) >= 3
 
 
 def test_scraper_proxy_initialization(monkeypatch):

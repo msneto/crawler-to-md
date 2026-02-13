@@ -135,16 +135,32 @@ class DatabaseManager:
             logger.debug(f"Marking link as visited with URL: {url}")
             self.conn.execute("UPDATE links SET visited = TRUE WHERE url = ?", (url,))
 
-    def get_unvisited_links(self):
+    def get_unvisited_links(self, limit=None):
         """
         Retrieve all unvisited links from the 'links' table.
+
+        Args:
+        limit (int | None): Maximum number of rows to return.
 
         Returns:
         list: List of unvisited links.
         """
+        if limit is not None:
+            if not isinstance(limit, int):
+                raise ValueError("limit must be an integer or None")
+            if limit < 0:
+                raise ValueError("limit must be greater than or equal to 0")
+
         with self.conn:
             logger.debug("Retrieving all unvisited links")
-            cursor = self.conn.execute("SELECT url FROM links WHERE visited = FALSE")
+            if limit is None:
+                cursor = self.conn.execute(
+                    "SELECT url FROM links WHERE visited = FALSE"
+                )
+            else:
+                cursor = self.conn.execute(
+                    "SELECT url FROM links WHERE visited = FALSE LIMIT ?", (limit,)
+                )
             return cursor.fetchall()
 
     def get_links_count(self):

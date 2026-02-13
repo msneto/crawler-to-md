@@ -15,6 +15,7 @@ Primary target profile:
 - Completed: Task 1.1 (index on `links.visited`)
 - Completed: Task 1.2 (bulk discovered-link insert path)
 - Completed: Task 1.3 and Task 1.4 (minify-aware compiled markdown optimizations)
+- Completed: Task 2.1 (paged unvisited-link reads in crawl loop)
 
 ---
 

@@ -77,3 +77,35 @@ def test_get_failed_page_urls_and_mark_unvisited():
     db.mark_link_unvisited("http://a")
 
     assert db.get_unvisited_links() == [("http://a",)]
+
+
+def test_get_unvisited_links_limit_support():
+    db = DatabaseManager(":memory:")
+    db.insert_link(["http://a", "http://b", "http://c"])
+    db.mark_link_visited("http://b")
+
+    limited = db.get_unvisited_links(limit=1)
+    assert len(limited) == 1
+    assert limited[0][0] in {"http://a", "http://c"}
+
+    limited_large = db.get_unvisited_links(limit=10)
+    assert set(limited_large) == {("http://a",), ("http://c",)}
+
+    assert db.get_unvisited_links(limit=0) == []
+
+
+def test_get_unvisited_links_limit_validation():
+    db = DatabaseManager(":memory:")
+    db.insert_link("http://a")
+
+    try:
+        db.get_unvisited_links(limit=-1)
+        assert False, "Expected ValueError for negative limit"
+    except ValueError:
+        assert True
+
+    try:
+        db.get_unvisited_links(limit="2")
+        assert False, "Expected ValueError for non-integer limit"
+    except ValueError:
+        assert True

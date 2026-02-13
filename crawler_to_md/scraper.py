@@ -18,6 +18,8 @@ logger.name = "Scraper"
 
 
 class Scraper:
+    UNVISITED_LINKS_BATCH_SIZE = 200
+
     def __init__(
         self,
         base_url,
@@ -64,6 +66,7 @@ class Scraper:
         if proxy:
             self.session.proxies.update({"http": proxy, "https": proxy})
         self.proxy = proxy
+        self.unvisited_links_batch_size = self.UNVISITED_LINKS_BATCH_SIZE
 
         self.include_filters = include_filters or []
         self.exclude_filters = exclude_filters or []
@@ -317,7 +320,12 @@ class Scraper:
         # Begin the scraping loop
         while True:
             # Fetch a list of unvisited links from the database
-            unvisited_links = self.db_manager.get_unvisited_links()
+            try:
+                unvisited_links = self.db_manager.get_unvisited_links(
+                    limit=self.unvisited_links_batch_size
+                )
+            except TypeError:
+                unvisited_links = self.db_manager.get_unvisited_links()
 
             # Exit the loop if there are no more links to visit
             if not unvisited_links:
