@@ -721,3 +721,133 @@ def test_cli_help_mentions_output_and_cache_dir_aliases(monkeypatch, capsys):
     help_output = capsys.readouterr().out
     assert "--output-dir" in help_output
     assert "--cache-dir" in help_output
+
+
+def test_cli_closes_database_on_success(monkeypatch, tmp_path):
+    calls = {"close": 0}
+    original_close = DatabaseManager.close
+
+    def tracked_close(self):
+        if not getattr(self, "_closed", False):
+            calls["close"] += 1
+        return original_close(self)
+
+    monkeypatch.setattr(DatabaseManager, "close", tracked_close)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(tmp_path / "cache"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+
+    cli.main()
+
+    assert calls["close"] == 1
+
+
+def test_cli_closes_database_when_scraper_init_fails(monkeypatch, tmp_path):
+    calls = {"close": 0}
+    original_close = DatabaseManager.close
+
+    def tracked_close(self):
+        if not getattr(self, "_closed", False):
+            calls["close"] += 1
+        return original_close(self)
+
+    def fake_scraper_init(*args, **kwargs):
+        raise ValueError("invalid scraper config")
+
+    monkeypatch.setattr(DatabaseManager, "close", tracked_close)
+    monkeypatch.setattr(Scraper, "__init__", fake_scraper_init)
+
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(tmp_path / "cache"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    assert calls["close"] == 1
+
+
+def test_cli_closes_database_when_scraping_raises(monkeypatch, tmp_path):
+    calls = {"close": 0}
+    original_close = DatabaseManager.close
+
+    def tracked_close(self):
+        if not getattr(self, "_closed", False):
+            calls["close"] += 1
+        return original_close(self)
+
+    def fake_start_scraping(*args, **kwargs):
+        raise RuntimeError("crawl failed")
+
+    monkeypatch.setattr(DatabaseManager, "close", tracked_close)
+    monkeypatch.setattr(Scraper, "start_scraping", fake_start_scraping)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(tmp_path / "cache"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+
+    with pytest.raises(RuntimeError):
+        cli.main()
+
+    assert calls["close"] == 1
+
+
+def test_cli_closes_database_when_export_raises(monkeypatch, tmp_path):
+    calls = {"close": 0}
+    original_close = DatabaseManager.close
+
+    def tracked_close(self):
+        if not getattr(self, "_closed", False):
+            calls["close"] += 1
+        return original_close(self)
+
+    def fake_export_json(*args, **kwargs):
+        raise RuntimeError("export failed")
+
+    monkeypatch.setattr(DatabaseManager, "close", tracked_close)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", fake_export_json)
+
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(tmp_path / "cache"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+
+    with pytest.raises(RuntimeError):
+        cli.main()
+
+    assert calls["close"] == 1

@@ -223,63 +223,68 @@ def main():
         except OSError as e:
             logger.error(f"Failed to remove cache database at {db_path}: {e}")
             sys.exit(1)
-    db_manager = DatabaseManager(db_path)
-    logger.info("DatabaseManager initialized.")
-
+    db_manager = None
     try:
-        scraper = Scraper(
-            base_url=args.base_url,
-            exclude_patterns=args.exclude_url,
-            include_url_patterns=args.include_url,
-            db_manager=db_manager,
-            rate_limit=args.rate_limit,
-            delay=args.delay,
-            timeout=args.timeout,
-            proxy=args.proxy,
-            include_filters=args.include,
-            exclude_filters=args.exclude,
-        )
-    except ValueError as exc:
-        parser.error(str(exc))
-    logger.info("Scraper initialized.")
+        db_manager = DatabaseManager(db_path)
+        logger.info("DatabaseManager initialized.")
 
-    # Start the scraping process
-    logger.info(f"Starting the scraping process for URL: {args.url}")
-    scraper.start_scraping(url=args.url, urls_list=urls_list)
+        try:
+            scraper = Scraper(
+                base_url=args.base_url,
+                exclude_patterns=args.exclude_url,
+                include_url_patterns=args.include_url,
+                db_manager=db_manager,
+                rate_limit=args.rate_limit,
+                delay=args.delay,
+                timeout=args.timeout,
+                proxy=args.proxy,
+                include_filters=args.include,
+                exclude_filters=args.exclude,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        logger.info("Scraper initialized.")
 
-    output_name = utils.randomstring_to_filename(args.title)
+        # Start the scraping process
+        logger.info(f"Starting the scraping process for URL: {args.url}")
+        scraper.start_scraping(url=args.url, urls_list=urls_list)
 
-    # After the scraping process is completed in the main function
-    export_manager = ExportManager(db_manager, args.title, minify=args.minify)
-    logger.info("ExportManager initialized.")
+        output_name = utils.randomstring_to_filename(args.title)
 
-    if not args.no_markdown:
-        export_manager.export_to_markdown(os.path.join(output, f"{output_name}.md"))
-        logger.info("Export to markdown completed.")
+        # After the scraping process is completed in the main function
+        export_manager = ExportManager(db_manager, args.title, minify=args.minify)
+        logger.info("ExportManager initialized.")
 
-    if not args.no_json:
-        export_manager.export_to_json(os.path.join(output, f"{output_name}.json"))
-        logger.info("Export to JSON completed.")
+        if not args.no_markdown:
+            export_manager.export_to_markdown(os.path.join(output, f"{output_name}.md"))
+            logger.info("Export to markdown completed.")
 
-    output_folder_ei = None
-    if args.export_individual:
-        logger.info("Export of individual pages...")
-        output_folder_ei = export_manager.export_individual_markdown(
-            output_folder=output, base_url=args.base_url
-        )
-        logger.info("Export of individual Markdown files completed.")
+        if not args.no_json:
+            export_manager.export_to_json(os.path.join(output, f"{output_name}.json"))
+            logger.info("Export to JSON completed.")
 
-    markdown_path = os.path.join(output, f"{output_name}.md")
-    json_path = os.path.join(output, f"{output_name}.json")
-    if not args.no_markdown:
-        print("\033[94mMarkdown file generated at: \033[0m", markdown_path)
-    if not args.no_json:
-        print("\033[92mJSON file generated at: \033[0m", json_path)
-    if args.export_individual and output_folder_ei:
-        print(
-            "\033[95mIndividual Markdown files exported to: \033[0m",
-            output_folder_ei,
-        )
+        output_folder_ei = None
+        if args.export_individual:
+            logger.info("Export of individual pages...")
+            output_folder_ei = export_manager.export_individual_markdown(
+                output_folder=output, base_url=args.base_url
+            )
+            logger.info("Export of individual Markdown files completed.")
+
+        markdown_path = os.path.join(output, f"{output_name}.md")
+        json_path = os.path.join(output, f"{output_name}.json")
+        if not args.no_markdown:
+            print("\033[94mMarkdown file generated at: \033[0m", markdown_path)
+        if not args.no_json:
+            print("\033[92mJSON file generated at: \033[0m", json_path)
+        if args.export_individual and output_folder_ei:
+            print(
+                "\033[95mIndividual Markdown files exported to: \033[0m",
+                output_folder_ei,
+            )
+    finally:
+        if db_manager is not None:
+            db_manager.close()
 
 
 if __name__ == "__main__":

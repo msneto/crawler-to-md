@@ -14,7 +14,26 @@ class DatabaseManager:
         """
         logger.debug(f"Connecting to the database at {db_path}")
         self.conn = sqlite3.connect(db_path)
+        self._closed = False
         self.create_tables()
+
+    def close(self):
+        """
+        Close the database connection.
+
+        This method is safe to call multiple times.
+        """
+        if getattr(self, "_closed", False):
+            return
+
+        conn = getattr(self, "conn", None)
+        if conn is None:
+            self._closed = True
+            return
+
+        logger.debug("Closing the database connection")
+        conn.close()
+        self._closed = True
 
     def create_tables(self):
         """
@@ -228,5 +247,7 @@ class DatabaseManager:
         """
         Close the database connection when the object is deleted.
         """
-        logger.debug("Closing the database connection")
-        self.conn.close()
+        try:
+            self.close()
+        except Exception:
+            pass

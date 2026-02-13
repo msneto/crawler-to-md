@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 
 from crawler_to_md.database_manager import DatabaseManager
@@ -108,4 +109,22 @@ def test_get_unvisited_links_limit_validation():
         db.get_unvisited_links(limit="2")
         assert False, "Expected ValueError for non-integer limit"
     except ValueError:
+        assert True
+
+
+def test_close_is_idempotent():
+    db = DatabaseManager(":memory:")
+
+    db.close()
+    db.close()
+
+
+def test_operations_fail_after_close():
+    db = DatabaseManager(":memory:")
+    db.close()
+
+    try:
+        db.get_links_count()
+        assert False, "Expected sqlite3.ProgrammingError after close"
+    except sqlite3.ProgrammingError:
         assert True
