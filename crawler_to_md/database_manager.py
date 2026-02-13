@@ -33,6 +33,9 @@ class DatabaseManager:
                           url TEXT PRIMARY KEY,
                           visited BOOLEAN)"""
             )
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_links_visited ON links (visited)"
+            )
 
     def insert_page(self, url, content, metadata):
         """
@@ -90,18 +93,36 @@ class DatabaseManager:
         else:
             raise ValueError("URL must be a string or a list of strings")
 
-        count = 0
+        inserted_count = self.insert_links(urls, visited=visited)
+        return inserted_count > 0
+
+    def insert_links(self, urls, visited=False):
+        """
+        Insert multiple links into the 'links' table if they do not exist.
+
+        Args:
+        urls (List[str]): URLs to insert.
+        visited (bool): Initial visited status (default False).
+
+        Returns:
+        int: Number of newly inserted links.
+        """
+        if not isinstance(urls, list):
+            raise ValueError("URLs must be provided as a list of strings")
+
+        if not urls:
+            return 0
+
         with self.conn:
             for link in urls:
                 logger.debug(f"Inserting a new link with URL: {link}")
-                cur = self.conn.execute(
-                    "INSERT OR IGNORE INTO links (url, visited) VALUES (?, ?)",
-                    (link, visited),
-                )
-                if cur.rowcount > 0:
-                    count += 1
 
-            return count > 0
+            before_changes = self.conn.total_changes
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO links (url, visited) VALUES (?, ?)",
+                ((link, visited) for link in urls),
+            )
+            return self.conn.total_changes - before_changes
 
     def mark_link_visited(self, url):
         """

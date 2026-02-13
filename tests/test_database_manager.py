@@ -37,6 +37,25 @@ def test_insert_link_duplicates_and_list():
     assert set(db.get_unvisited_links()) == {("http://a",), ("http://b",)}
 
 
+def test_insert_links_returns_inserted_count():
+    db = DatabaseManager(":memory:")
+
+    inserted = db.insert_links(["http://a", "http://b", "http://a"])
+
+    assert inserted == 2
+    assert db.get_links_count() == 2
+
+
+def test_insert_links_rejects_non_list_input():
+    db = DatabaseManager(":memory:")
+
+    try:
+        db.insert_links("http://a")
+        assert False, "Expected ValueError for non-list input"
+    except ValueError:
+        assert True
+
+
 def test_upsert_page_replaces_existing_content():
     db = DatabaseManager(":memory:")
     db.insert_page("http://a", None, '{"scrape_status":"failed"}')

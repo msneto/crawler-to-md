@@ -409,14 +409,20 @@ class Scraper:
                 if not urls_list:
                     new_links = self.fetch_links(html=html, url=url)
 
-                    # Count and insert new links into the database
+                    # Count and insert new links into the database in batch
                     real_new_links_count = 0
-                    for new_url in new_links:
-                        if self.db_manager.insert_link(new_url):
-                            real_new_links_count += 1
-                            logger.debug(
-                                f"Inserted new link {new_url} into the database"
+                    if new_links:
+                        if hasattr(self.db_manager, "insert_links"):
+                            real_new_links_count = self.db_manager.insert_links(
+                                list(new_links)
                             )
+                        else:
+                            for new_url in new_links:
+                                if self.db_manager.insert_link(new_url):
+                                    real_new_links_count += 1
+                                    logger.debug(
+                                        f"Inserted new link {new_url} into the database"
+                                    )
 
                     # Update the progress bar total with the count of new links
                     if real_new_links_count:

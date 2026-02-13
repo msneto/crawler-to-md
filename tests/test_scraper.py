@@ -15,7 +15,7 @@ class DummyDB(DatabaseManager):
     def __del__(self):
         pass
 
-    def insert_link(self, url, visited=False):
+    def insert_link(self, url, visited=False) -> bool:
         return True
 
     def get_unvisited_links(self):
@@ -202,7 +202,7 @@ class ListDB(DummyDB):
         self.visited = set()
         self.pages = []
 
-    def insert_link(self, url, visited=False):
+    def insert_link(self, url, visited=False) -> bool:
         urls = url if isinstance(url, list) else [url]
         inserted = False
         for u in urls:
@@ -210,6 +210,14 @@ class ListDB(DummyDB):
                 self.links.append(u)
                 inserted = True
         return inserted
+
+    def insert_links(self, urls, visited=False):
+        count = 0
+        for u in urls:
+            if u not in self.links:
+                self.links.append(u)
+                count += 1
+        return count
 
     def get_unvisited_links(self):
         return [(u,) for u in self.links if u not in self.visited]
