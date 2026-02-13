@@ -60,6 +60,24 @@ class ExportManager:
             content = content.replace("\n\n\n", "\n\n")
         return content
 
+    def _safe_metadata_dict(self, metadata):
+        """
+        Parse metadata JSON and return a dictionary.
+
+        Args:
+            metadata (str): Serialized metadata.
+
+        Returns:
+            dict: Parsed metadata dictionary or an empty dict.
+        """
+        try:
+            parsed = json.loads(metadata)
+            if isinstance(parsed, dict):
+                return parsed
+            return {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
     def _concatenate_markdown(self, pages):
         """
         Concatenate a list of Markdown files into one, with header adjustments.
@@ -76,7 +94,9 @@ class ExportManager:
                 continue  # Skip empty pages
 
             filtered_metadata = {
-                k: v for k, v in json.loads(metadata).items() if v is not None
+                k: v
+                for k, v in self._safe_metadata_dict(metadata).items()
+                if v is not None
             }
 
             # Prepare metadata as an HTML comment
@@ -127,7 +147,9 @@ class ExportManager:
                 content = self._cleanup_markdown(content)
 
                 filtered_metadata = {
-                    k: v for k, v in json.loads(metadata).items() if v is not None
+                    k: v
+                    for k, v in self._safe_metadata_dict(metadata).items()
+                    if v is not None
                 }
                 data_to_export.append(
                     {"url": url, "content": content, "metadata": filtered_metadata}
@@ -150,8 +172,11 @@ class ExportManager:
 
         os.makedirs(output_folder, exist_ok=True)
         for page in pages:
-            url, content, metadata = page
+            url, content, _metadata = page
             logger.debug(f"Exporting individual Markdown for URL: {url}")
+
+            if content is None:
+                continue
 
             # Remove base_url from parsed URL if provided
             if base_url:
