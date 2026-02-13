@@ -36,7 +36,8 @@ class Scraper:
         Args:
             base_url (str): The base URL to start scraping from.
             exclude_patterns (list): List of URL patterns to exclude from scraping.
-            include_url_patterns (list): List of URL patterns that must be present to scrape.
+            include_url_patterns (list): List of URL patterns that must be
+                present to scrape.
             db_manager (DatabaseManager): The database manager object.
             rate_limit (int): Maximum number of requests per minute.
             delay (float): Delay between requests in seconds.
@@ -96,6 +97,25 @@ class Scraper:
         if selector.startswith("."):
             return soup.find_all(class_=selector[1:])
         return soup.find_all(selector)
+
+    def _failed_scrape_metadata(self, status, error_type=None, error_message=None):
+        """
+        Build structured metadata for failed scraping attempts.
+
+        Args:
+            status (str): Scrape status value.
+            error_type (str, optional): Exception class name or category.
+            error_message (str, optional): Error details.
+
+        Returns:
+            str: JSON metadata string for persistence.
+        """
+        metadata = {"scrape_status": status}
+        if error_type:
+            metadata["error_type"] = error_type
+        if error_message:
+            metadata["error_message"] = error_message
+        return json.dumps(metadata)
 
     def is_valid_link(self, link):
         """
@@ -235,9 +255,7 @@ class Scraper:
                 logger.warning("No content scraped from %s", url)
                 return None, None
 
-            logger.debug(
-                "Successfully scraped content and metadata from %s", url
-            )
+            logger.debug("Successfully scraped content and metadata from %s", url)
             return markdown, metadata
 
         except Exception as e:
@@ -270,6 +288,13 @@ class Scraper:
         elif url:
             # Insert a single URL if provided and valid
             self.db_manager.insert_link(url)
+
+        # Auto-retry previously failed pages (content IS NULL)
+        for failed_url in self.db_manager.get_failed_page_urls():
+            if not self.is_valid_link(failed_url):
+                continue
+            self.db_manager.insert_link(failed_url)
+            self.db_manager.mark_link_unvisited(failed_url)
 
         # Log the start of the scraping process
         logger.info("Starting scraping process")
@@ -324,10 +349,25 @@ class Scraper:
                 url = link[0]  # Extract the URL from the link tuple
 
                 # Attempt to fetch the page content
-                response = self.session.get(url)
-
-                # Increment request count for rate limiting
-                request_count += 1
+                try:
+                    response = self.session.get(url)
+                    # Increment request count for rate limiting
+                    request_count += 1
+                except requests.RequestException as exc:
+                    # Increment request count for rate limiting
+                    request_count += 1
+                    logger.error("Error fetching %s: %s", url, exc)
+                    self.db_manager.upsert_page(
+                        url,
+                        None,
+                        self._failed_scrape_metadata(
+                            status="failed",
+                            error_type=exc.__class__.__name__,
+                            error_message=str(exc),
+                        ),
+                    )
+                    self.db_manager.mark_link_visited(url)
+                    continue
 
                 # Check for a successful response and correct content type
                 if response.status_code != 200 or not response.headers.get(
@@ -347,8 +387,19 @@ class Scraper:
                 # Scrape the page for content and metadata
                 content, metadata = self.scrape_page(html, url)
 
-                # Insert the scraped data into the database
-                self.db_manager.insert_page(url, content, json.dumps(metadata))
+                # Insert or update scraped data in the database
+                if content is None:
+                    self.db_manager.upsert_page(
+                        url,
+                        None,
+                        self._failed_scrape_metadata(
+                            status="failed",
+                            error_type="NoContentError",
+                            error_message="No content extracted",
+                        ),
+                    )
+                else:
+                    self.db_manager.upsert_page(url, content, json.dumps(metadata))
 
                 # Fetch and insert new links found on the page,
                 # if not working from a predefined list
