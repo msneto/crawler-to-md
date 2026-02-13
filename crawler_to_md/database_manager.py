@@ -50,6 +50,28 @@ class DatabaseManager:
                 (url, content, metadata),
             )
 
+    def upsert_page(self, url, content, metadata):
+        """
+        Insert or update a page in the 'pages' table.
+
+        Args:
+        url (str): The URL of the page.
+        content (str | None): The scraped page content.
+        metadata (str): The metadata of the page serialized as JSON.
+        """
+        with self.conn:
+            logger.debug(f"Upserting page with URL: {url}")
+            self.conn.execute(
+                """
+                INSERT INTO pages (url, content, metadata)
+                VALUES (?, ?, ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    content = excluded.content,
+                    metadata = excluded.metadata
+                """,
+                (url, content, metadata),
+            )
+
     def insert_link(self, url, visited=False):
         """
         Insert a new link into the 'links' table if it does not exist.
@@ -141,6 +163,29 @@ class DatabaseManager:
             logger.debug("Retrieving all pages")
             cursor = self.conn.execute("SELECT url, content, metadata FROM pages")
             return cursor.fetchall()
+
+    def get_failed_page_urls(self):
+        """
+        Retrieve URLs of pages with failed scraping attempts.
+
+        Returns:
+        list[str]: URLs whose page content is NULL.
+        """
+        with self.conn:
+            logger.debug("Retrieving URLs for failed pages")
+            cursor = self.conn.execute("SELECT url FROM pages WHERE content IS NULL")
+            return [row[0] for row in cursor.fetchall()]
+
+    def mark_link_unvisited(self, url):
+        """
+        Mark a link as unvisited in the 'links' table.
+
+        Args:
+        url (str): The URL of the link to mark as unvisited.
+        """
+        with self.conn:
+            logger.debug(f"Marking link as unvisited with URL: {url}")
+            self.conn.execute("UPDATE links SET visited = FALSE WHERE url = ?", (url,))
 
     def __del__(self):
         """
