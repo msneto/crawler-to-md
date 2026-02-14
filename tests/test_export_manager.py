@@ -59,11 +59,34 @@ def test_concatenate_markdown_filters_metadata():
     db.insert_page("http://a", "# T1", json.dumps({"keep": "x"}))
     db.insert_page("http://b", "# T2", json.dumps({"drop": None}))
     exporter = ExportManager(db, title="Head")
-    result = exporter._concatenate_markdown(db.get_all_pages())
+    # Test with iterator instead of list to ensure compatibility
+    pages_iterator = (row for row in db.get_all_pages())
+    result = exporter._concatenate_markdown(pages_iterator)
     assert result.startswith("# Head")
     assert "URL: http://a" in result and "T1" in result
     assert "keep: x" in result
     assert "drop:" not in result
+
+
+def test_concatenate_markdown_performance_linear():
+    import time
+
+    db = DatabaseManager(":memory:")
+    exporter = ExportManager(db, title="Perf")
+
+    # Generate many small pages
+    num_pages = 1000
+    pages = [(f"http://{i}", f"# Content {i}\nSome text here.", "{}") for i in range(num_pages)]
+
+    start_time = time.time()
+    result = exporter._concatenate_markdown(iter(pages))
+    duration = time.time() - start_time
+
+    # With O(N^2) this would be very slow.
+    # On most systems, 1000 items with join() should take < 0.1s.
+    # We set a generous limit for CI environments.
+    assert duration < 1.0
+    assert len(result) > 10000
 
 
 def test_export_individual_markdown(tmp_path):

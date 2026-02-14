@@ -168,12 +168,12 @@ class ExportManager:
         Concatenate a list of Markdown files into one, with header adjustments.
 
         Args:
-            pages (list): List of pages to concatenate.
+            pages (iterator): Iterator of pages to concatenate.
 
         Returns:
             str: The concatenated Markdown content.
         """
-        final_content = f"# {self.title}\n"
+        parts = [f"# {self.title}\n"]
         for url, content, metadata in pages:
             if content is None:
                 continue  # Skip empty pages
@@ -182,7 +182,7 @@ class ExportManager:
             adjusted_content = self._adjust_headers(content)
 
             if self.minify:
-                final_content += "\n" + adjusted_content
+                parts.append("\n" + adjusted_content)
             else:
                 filtered_metadata = {
                     k: v
@@ -197,11 +197,10 @@ class ExportManager:
                     metadata_content += f"{key}: {value}\n"
                 metadata_content += "-->"
 
-                final_content += (
-                    "\n" + metadata_content + "\n\n" + adjusted_content + "\n---"
-                )  # Add a separator and metadata
+                parts.append("\n" + metadata_content + "\n\n" + adjusted_content + "\n---")
 
-            final_content = self._cleanup_markdown(final_content)
+        final_content = "".join(parts)
+        final_content = self._cleanup_markdown(final_content)
 
         if self.minify:
             final_content = self._minify_markdown(final_content)
@@ -215,7 +214,7 @@ class ExportManager:
         Args:
             output_path (str): The path to the output markdown file.
         """
-        pages = self.db_manager.get_all_pages()
+        pages = self.db_manager.get_pages_iterator()
         with open(output_path, "w", encoding="utf-8") as md_file:
             md_file.write(self._concatenate_markdown(pages))
         logger.info(f"Exported pages to markdown file: {output_path}")
@@ -227,7 +226,7 @@ class ExportManager:
         Args:
             output_path (str): The path to the output JSON file.
         """
-        pages = self.db_manager.get_all_pages()
+        pages = self.db_manager.get_pages_iterator()
         with open(output_path, "w", encoding="utf-8") as json_file:
             # Filter metadata and strip null values
             data_to_export = []
@@ -257,7 +256,7 @@ class ExportManager:
             output_folder (str): The base output folder where the files will be saved.
             base_url (str or None): Base URL to remove for creating the path.
         """
-        pages = self.db_manager.get_all_pages()
+        pages = self.db_manager.get_pages_iterator()
         # Add 'files/' to the output folder and create it if it doesn't exist
         output_folder = os.path.join(output_folder, "files")
 

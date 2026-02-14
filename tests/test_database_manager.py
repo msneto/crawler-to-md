@@ -128,3 +128,42 @@ def test_operations_fail_after_close():
         assert False, "Expected sqlite3.ProgrammingError after close"
     except sqlite3.ProgrammingError:
         assert True
+
+
+def test_database_wal_mode():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+        db = DatabaseManager(db_path)
+        cursor = db.conn.execute("PRAGMA journal_mode")
+        mode = cursor.fetchone()[0]
+        assert mode.lower() == "wal"
+
+
+def test_get_pages_iterator_paging():
+    db = DatabaseManager(":memory:")
+    # Insert 150 pages to test the 100-page paging logic
+    pages = [(f"http://{i}", f"content {i}", "{}") for i in range(150)]
+    db.upsert_pages(pages)
+
+    iterator = db.get_pages_iterator()
+    results = list(iterator)
+
+    assert len(results) == 150
+    assert results[0][0] == "http://0"
+    assert results[149][0] == "http://149"
+
+
+def test_upsert_pages_batch():
+    db = DatabaseManager(":memory:")
+    initial_pages = [("http://a", "c1", "{}"), ("http://b", "c2", "{}")]
+    db.upsert_pages(initial_pages)
+
+    # Update one and insert one new
+    update_pages = [("http://a", "updated", '{"k":"v"}'), ("http://c", "c3", "{}")]
+    db.upsert_pages(update_pages)
+
+    all_pages = dict((url, content) for url, content, _ in db.get_all_pages())
+    assert all_pages["http://a"] == "updated"
+    assert all_pages["http://b"] == "c2"
+    assert all_pages["http://c"] == "c3"
+    assert len(all_pages) == 3

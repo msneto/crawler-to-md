@@ -14,6 +14,7 @@ class DatabaseManager:
         """
         logger.debug(f"Connecting to the database at {db_path}")
         self.conn = sqlite3.connect(db_path)
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self._closed = False
         self.create_tables()
 
@@ -81,9 +82,20 @@ class DatabaseManager:
         content (str | None): The scraped page content.
         metadata (str): The metadata of the page serialized as JSON.
         """
+        self.upsert_pages([(url, content, metadata)])
+
+    def upsert_pages(self, pages):
+        """
+        Insert or update multiple pages in the 'pages' table.
+
+        Args:
+        pages (list[tuple]): List of (url, content, metadata) tuples.
+        """
+        if not pages:
+            return
         with self.conn:
-            logger.debug(f"Upserting page with URL: {url}")
-            self.conn.execute(
+            logger.debug(f"Upserting {len(pages)} pages")
+            self.conn.executemany(
                 """
                 INSERT INTO pages (url, content, metadata)
                 VALUES (?, ?, ?)
@@ -91,7 +103,7 @@ class DatabaseManager:
                     content = excluded.content,
                     metadata = excluded.metadata
                 """,
-                (url, content, metadata),
+                pages,
             )
 
     def insert_link(self, url, visited=False):
@@ -150,9 +162,23 @@ class DatabaseManager:
         Args:
         url (str): The URL of the link to mark as visited.
         """
+        self.mark_links_visited([url])
+
+    def mark_links_visited(self, urls):
+        """
+        Mark multiple links as visited in the 'links' table.
+
+        Args:
+        urls (list[str]): List of URLs to mark as visited.
+        """
+        if not urls:
+            return
         with self.conn:
-            logger.debug(f"Marking link as visited with URL: {url}")
-            self.conn.execute("UPDATE links SET visited = TRUE WHERE url = ?", (url,))
+            logger.debug(f"Marking {len(urls)} links as visited")
+            self.conn.executemany(
+                "UPDATE links SET visited = TRUE WHERE url = ?",
+                ((url,) for url in urls),
+            )
 
     def get_unvisited_links(self, limit=None):
         """
@@ -219,6 +245,23 @@ class DatabaseManager:
             logger.debug("Retrieving all pages")
             cursor = self.conn.execute("SELECT url, content, metadata FROM pages")
             return cursor.fetchall()
+
+    def get_pages_iterator(self):
+        """
+        Retrieve all pages from the 'pages' table as an iterator.
+
+        Yields:
+        tuple: (url, content, metadata)
+        """
+        logger.debug("Iterating over all pages")
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT url, content, metadata FROM pages")
+        while True:
+            rows = cursor.fetchmany(100)
+            if not rows:
+                break
+            for row in rows:
+                yield row
 
     def get_failed_page_urls(self):
         """
