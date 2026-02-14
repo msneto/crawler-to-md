@@ -197,7 +197,7 @@ class ExportManager:
                     metadata_content += f"{key}: {value}\n"
                 metadata_content += "-->"
 
-                parts.append("\n" + metadata_content + "\n\n" + adjusted_content + "\n---")
+                parts.append(f"\n{metadata_content}\n\n{adjusted_content}\n---")
 
         final_content = "".join(parts)
         final_content = self._cleanup_markdown(final_content)

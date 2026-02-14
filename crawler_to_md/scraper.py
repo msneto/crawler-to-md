@@ -1,17 +1,17 @@
 import copy
+import importlib.util
 import io
 import json
-import os
 import re
 import time
 from urllib.parse import urldefrag, urljoin
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
 from bs4 import BeautifulSoup, Tag
 from markitdown import MarkItDown
+from requests.adapters import HTTPAdapter
 from tqdm import tqdm
+from urllib3.util import Retry
 
 from . import log_setup, utils
 from .database_manager import DatabaseManager
@@ -20,11 +20,9 @@ logger = log_setup.get_logger()
 logger.name = "Scraper"
 
 # Try to use lxml for faster parsing, fallback to html.parser
-try:
-    import lxml
-
+if importlib.util.find_spec("lxml"):
     DEFAULT_PARSER = "lxml"
-except ImportError:
+else:
     DEFAULT_PARSER = "html.parser"
 
 # Import internal Markdownify for fast-path conversion
@@ -79,11 +77,13 @@ class Scraper:
         # Compile regex patterns for faster filtering
         self._exclude_regex = None
         if self.exclude_patterns:
-            self._exclude_regex = re.compile("|".join(re.escape(p) for p in self.exclude_patterns))
+            pattern = "|".join(re.escape(p) for p in self.exclude_patterns)
+            self._exclude_regex = re.compile(pattern)
 
         self._include_regex = None
         if self.include_url_patterns:
-            self._include_regex = re.compile("|".join(re.escape(p) for p in self.include_url_patterns))
+            pattern = "|".join(re.escape(p) for p in self.include_url_patterns)
+            self._include_regex = re.compile(pattern)
 
         self.db_manager = db_manager
         self.rate_limit = rate_limit
@@ -242,7 +242,8 @@ class Scraper:
                 for element in self._find_elements(soup, selector):
                     element.decompose()
 
-            # Always remove script and style blocks (matching MarkItDown's HtmlConverter)
+            # Always remove script and style blocks
+            # (matching MarkItDown's HtmlConverter)
             for script in soup(["script", "style"]):
                 script.extract()
 
@@ -485,7 +486,7 @@ class Scraper:
                     content_type = response.headers.get("content-type", "").lower()
                     if response.status_code != 200 or "text/html" not in content_type:
                         logger.info(
-                            "Skipping link %s due to invalid status code (%s) or content type (%s)",
+                            "Skipping link %s: status %s, type %s",
                             url,
                             response.status_code,
                             content_type,
@@ -516,7 +517,8 @@ class Scraper:
                 # Parse once and reuse for extraction and link discovery
                 soup = BeautifulSoup(html, DEFAULT_PARSER)
                 if not urls_list:
-                    all_discovered_links.update(self._extract_links_from_soup(soup, url))
+                    new_links = self._extract_links_from_soup(soup, url)
+                    all_discovered_links.update(new_links)
 
                 # Scrape the page for content and metadata
                 content, metadata = self._scrape_page_from_soup(soup, url)

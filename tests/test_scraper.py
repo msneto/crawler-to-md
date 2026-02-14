@@ -290,9 +290,6 @@ class ListDB(DummyDB):
     def get_all_pages(self):
         return self.pages
 
-    def mark_link_visited(self, url):
-        self.visited.add(url)
-
     def mark_links_visited(self, urls):
         for url in urls:
             self.visited.add(url)
@@ -507,7 +504,8 @@ def test_start_scraping_reuses_single_markitdown_instance(monkeypatch):
         scraper.start_scraping(url="http://example.com/start")
 
     assert db.get_visited_links_count() == 3
-    # With One-Parse optimization, MarkItDown is no longer instantiated/called for standard HTML
+    # With One-Parse optimization, MarkItDown is no longer
+    # instantiated/called for standard HTML
     assert mock_markdown.call_count == 0
     assert mock_custom_md.return_value.convert_soup.call_count == 3
 
@@ -953,7 +951,10 @@ def test_start_scraping_batch_db_calls(monkeypatch):
     db.get_visited_links_count.return_value = 0
     db.get_failed_page_urls.return_value = []
     # Mock unvisited links for one batch of 2
-    db.get_unvisited_links.side_effect = [[("http://example.com/a",), ("http://example.com/b",)], []]
+    db.get_unvisited_links.side_effect = [
+        [("http://example.com/a",), ("http://example.com/b",)],
+        [],
+    ]
 
     scraper = Scraper(
         base_url="http://example.com",
@@ -1004,7 +1005,7 @@ def test_scrape_page_fast_path_encoding():
     with patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md:
         mock_custom_md.return_value.convert_soup.return_value = "Olá Mundo!"
         content, _ = scraper.scrape_page(html, "http://example.com")
-        
+
         assert "Olá Mundo!" in content
         # Verify body element (or soup) was passed to convert_soup
         assert mock_custom_md.return_value.convert_soup.called
@@ -1018,7 +1019,7 @@ def test_scraper_session_adapter_config():
         include_url_patterns=[],
         db_manager=db,
     )
-    
+
     for protocol in ["http://", "https://"]:
         adapter = scraper.session.get_adapter(protocol)
         assert isinstance(adapter, requests.adapters.HTTPAdapter)
@@ -1032,7 +1033,7 @@ def test_scraper_session_adapter_config():
 
 def test_scraper_retries_behavior_with_mock(monkeypatch):
     import requests_mock
-    
+
     db = DummyDB()
     scraper = Scraper(
         base_url="http://example.com",
@@ -1043,24 +1044,28 @@ def test_scraper_retries_behavior_with_mock(monkeypatch):
 
     with requests_mock.Mocker() as m:
         # Configure the mock to return two 503 errors and then one 200 success
-        # This tests that our code handles a sequence of responses if we were to 
+        # This tests that our code handles a sequence of responses if we were to
         # call it multiple times, OR if the adapter was active.
         # Note: requests-mock 1.12.1 + requests 2.32 bypasses HTTPAdapter retries.
         m.get("http://example.com", [
             {"text": "Service Unavailable", "status_code": 503},
             {"text": "Service Unavailable", "status_code": 503},
-            {"text": "<html><body><a href='/ok'>ok</a></body></html>", "status_code": 200, "headers": {"Content-Type": "text/html"}}
+            {
+                "text": "<html><body><a href='/ok'>ok</a></body></html>",
+                "status_code": 200,
+                "headers": {"Content-Type": "text/html"},
+            },
         ])
 
         # We simulate the retries manually to verify the sequence logic
         resp1 = scraper.session.get("http://example.com")
         assert resp1.status_code == 503
-        
+
         resp2 = scraper.session.get("http://example.com")
         assert resp2.status_code == 503
-        
+
         resp3 = scraper.session.get("http://example.com")
         assert resp3.status_code == 200
         assert "ok" in resp3.text
-        
+
         assert m.call_count == 3

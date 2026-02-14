@@ -76,7 +76,10 @@ def test_concatenate_markdown_performance_linear():
 
     # Generate many small pages
     num_pages = 1000
-    pages = [(f"http://{i}", f"# Content {i}\nSome text here.", "{}") for i in range(num_pages)]
+    pages = [
+        (f"http://{i}", f"# Content {i}\nSome text here.", "{}")
+        for i in range(num_pages)
+    ]
 
     start_time = time.time()
     result = exporter._concatenate_markdown(iter(pages))
