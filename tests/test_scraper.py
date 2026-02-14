@@ -1008,3 +1008,23 @@ def test_scrape_page_fast_path_encoding():
         assert "Olá Mundo!" in content
         # Verify body element (or soup) was passed to convert_soup
         assert mock_custom_md.return_value.convert_soup.called
+
+
+def test_scraper_session_adapter_config():
+    db = DummyDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    
+    for protocol in ["http://", "https://"]:
+        adapter = scraper.session.get_adapter(protocol)
+        assert isinstance(adapter, requests.adapters.HTTPAdapter)
+        assert adapter.max_retries.total == 3
+        assert adapter.max_retries.backoff_factor == 1
+        assert set(adapter.max_retries.status_forcelist) == {429, 500, 502, 503, 504}
+        assert set(adapter.max_retries.allowed_methods) == {"HEAD", "GET", "OPTIONS"}
+        assert adapter._pool_connections == 10
+        assert adapter._pool_maxsize == 10

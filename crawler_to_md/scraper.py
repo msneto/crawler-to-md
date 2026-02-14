@@ -7,6 +7,8 @@ import time
 from urllib.parse import urldefrag, urljoin
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 from bs4 import BeautifulSoup, Tag
 from markitdown import MarkItDown
 from tqdm import tqdm
@@ -88,6 +90,20 @@ class Scraper:
         self.delay = delay
         self.timeout = timeout
         self.session = requests.Session()
+
+        # Configure connection pool and retries
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
+        )
+        adapter = HTTPAdapter(
+            pool_connections=10, pool_maxsize=10, max_retries=retry_strategy
+        )
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
         if proxy:
             self.session.proxies.update({"http": proxy, "https": proxy})
         self.proxy = proxy
