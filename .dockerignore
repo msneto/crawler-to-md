@@ -7,6 +7,6 @@
 /output
 __pycache__
 .git
-/pytest_cahe
+/pytest_cache
 /tests
 /.github
