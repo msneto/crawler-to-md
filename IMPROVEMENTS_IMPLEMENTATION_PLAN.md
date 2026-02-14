@@ -46,6 +46,7 @@ Risk scale:
 
 ## Completed Tasks
 
+- Task 0.2: Add CI quality gate for lint/tests.
 - Task 1.1: SQLite index for visited state.
 - Task 1.2: Bulk insert discovered links.
 - Task 1.3: Export cleanup pass only once.
@@ -85,6 +86,7 @@ Risk scale:
   - `.github/workflows/ci.yaml` (new)
 - **Tests**: workflow validation.
 - **Effort/Risk**: S / Low
+- **Status**: Complete
 
 ---
 
