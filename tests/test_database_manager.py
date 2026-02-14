@@ -167,3 +167,83 @@ def test_upsert_pages_batch():
     assert all_pages["http://b"] == "c2"
     assert all_pages["http://c"] == "c3"
     assert len(all_pages) == 3
+
+
+def test_schema_migration_adds_retry_count():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+
+        # Create old schema
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """CREATE TABLE links (
+                      url TEXT PRIMARY KEY,
+                      visited BOOLEAN)"""
+        )
+        conn.close()
+
+        # Initialize DatabaseManager (should trigger migration)
+        db = DatabaseManager(db_path)
+
+        # Check if column exists
+        cursor = db.conn.execute("PRAGMA table_info(links)")
+        columns = [info[1] for info in cursor.fetchall()]
+        assert "retry_count" in columns
+
+
+def test_commit_crawl_batch_operations():
+    db = DatabaseManager(":memory:")
+    db.insert_link(["http://a", "http://b", "http://c"])
+
+    # Batch operation:
+    # - Upsert page A (success)
+    # - Mark A visited
+    # - Increment retry B (fail)
+    # - Reset retry C (success after retry)
+
+    # Setup initial state
+    db.conn.execute("UPDATE links SET retry_count = 1 WHERE url = 'http://c'")
+
+    db.commit_crawl_batch(
+        pages_upsert=[("http://a", "content", "{}")],
+        visited_updates=["http://a"],
+        retry_increments=["http://b"],
+        retry_resets=["http://c"],
+    )
+
+    # Verify A
+    cursor = db.conn.execute("SELECT visited FROM links WHERE url = 'http://a'")
+    assert cursor.fetchone()[0] == 1
+    pages = db.get_all_pages()
+    assert len(pages) == 1
+    assert pages[0][0] == "http://a"
+
+    # Verify B
+    cursor = db.conn.execute("SELECT retry_count FROM links WHERE url = 'http://b'")
+    assert cursor.fetchone()[0] == 1
+
+    # Verify C
+    cursor = db.conn.execute("SELECT retry_count FROM links WHERE url = 'http://c'")
+    assert cursor.fetchone()[0] == 0
+
+
+def test_get_retriable_failed_urls():
+    db = DatabaseManager(":memory:")
+    urls = ["http://a", "http://b", "http://c"]
+    db.insert_link(urls)
+
+    # A: failed, retry_count 0
+    # B: failed, retry_count 2
+    # C: failed, retry_count 3 (max)
+
+    db.insert_page("http://a", None, "{}")
+    db.insert_page("http://b", None, "{}")
+    db.insert_page("http://c", None, "{}")
+
+    db.conn.execute("UPDATE links SET retry_count = 2 WHERE url = 'http://b'")
+    db.conn.execute("UPDATE links SET retry_count = 3 WHERE url = 'http://c'")
+
+    # Max retries = 3
+    retriable = db.get_retriable_failed_urls(max_retries=3)
+    assert set(retriable) == {"http://a", "http://b"}
+    assert "http://c" not in retriable

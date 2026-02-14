@@ -17,6 +17,7 @@ class DatabaseManager:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._closed = False
         self.create_tables()
+        self._migrate_schema()
 
     def close(self):
         """
@@ -51,11 +52,26 @@ class DatabaseManager:
             self.conn.execute(
                 """CREATE TABLE IF NOT EXISTS links (
                           url TEXT PRIMARY KEY,
-                          visited BOOLEAN)"""
+                          visited BOOLEAN,
+                          retry_count INTEGER DEFAULT 0)"""
             )
             self.conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_links_visited ON links (visited)"
             )
+
+    def _migrate_schema(self):
+        """
+        Migrate the database schema to include new columns if they are missing.
+        """
+        with self.conn:
+            # Check for 'retry_count' in 'links' table
+            cursor = self.conn.execute("PRAGMA table_info(links)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if "retry_count" not in columns:
+                logger.info("Migrating schema: Adding 'retry_count' to 'links' table")
+                self.conn.execute(
+                    "ALTER TABLE links ADD COLUMN retry_count INTEGER DEFAULT 0"
+                )
 
     def insert_page(self, url, content, metadata):
         """
@@ -274,6 +290,85 @@ class DatabaseManager:
             logger.debug("Retrieving URLs for failed pages")
             cursor = self.conn.execute("SELECT url FROM pages WHERE content IS NULL")
             return [row[0] for row in cursor.fetchall()]
+
+    def get_retriable_failed_urls(self, max_retries):
+        """
+        Retrieve URLs of pages that failed scraping but have not exceeded max retries.
+
+        Args:
+            max_retries (int): The maximum number of retries allowed.
+
+        Returns:
+            list[str]: List of URLs eligible for retry.
+        """
+        with self.conn:
+            logger.debug(
+                f"Retrieving retriable failed URLs (max_retries={max_retries})"
+            )
+            cursor = self.conn.execute(
+                """
+                SELECT p.url
+                FROM pages p
+                JOIN links l ON p.url = l.url
+                WHERE p.content IS NULL AND l.retry_count < ?
+                """,
+                (max_retries,),
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+    def commit_crawl_batch(
+        self, pages_upsert, visited_updates, retry_increments, retry_resets
+    ):
+        """
+        Atomically commit a batch of crawl operations.
+
+        Args:
+            pages_upsert (list): List of (url, content, metadata) tuples for
+                pages table.
+            visited_updates (list): List of URLs to mark as visited in links table.
+            retry_increments (list): List of URLs to increment retry_count for.
+            retry_resets (list): List of URLs to reset retry_count to 0 for.
+        """
+        with self.conn:
+            # Upsert pages
+            if pages_upsert:
+                logger.debug(f"Upserting {len(pages_upsert)} pages")
+                self.conn.executemany(
+                    """
+                    INSERT INTO pages (url, content, metadata)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(url) DO UPDATE SET
+                        content = excluded.content,
+                        metadata = excluded.metadata
+                    """,
+                    pages_upsert,
+                )
+
+            # Mark visited
+            if visited_updates:
+                logger.debug(f"Marking {len(visited_updates)} links as visited")
+                self.conn.executemany(
+                    "UPDATE links SET visited = TRUE WHERE url = ?",
+                    ((url,) for url in visited_updates),
+                )
+
+            # Increment retries
+            if retry_increments:
+                logger.debug(
+                    f"Incrementing retry count for {len(retry_increments)} URLs"
+                )
+                self.conn.executemany(
+                    "UPDATE links SET retry_count = retry_count + 1 WHERE url = ?",
+                    ((url,) for url in retry_increments),
+                )
+
+            # Reset retries
+            if retry_resets:
+                logger.debug(f"Resetting retry count for {len(retry_resets)} URLs")
+                self.conn.executemany(
+                    "UPDATE links SET retry_count = 0 WHERE url = ?",
+                    ((url,) for url in retry_resets),
+                )
 
     def mark_link_unvisited(self, url):
         """
