@@ -1,3 +1,4 @@
+import re
 from urllib.parse import urlparse, urlunparse
 
 from . import log_setup
@@ -190,3 +191,25 @@ def is_url_in_scope(url, base_url):
         return candidate_path == base_path or candidate_path.startswith(base_path + "/")
 
     return candidate_path.startswith(base_path)
+
+
+def normalize_markdown(text):
+    """
+    Apply standard Markdown normalization:
+    - Strip trailing whitespace from lines.
+    - Collapse 3+ consecutive newlines into 2.
+
+    Args:
+        text (str): Raw Markdown text.
+
+    Returns:
+        str: Normalized Markdown text.
+    """
+    if not text:
+        return ""
+    # Strip trailing whitespace from each line
+    lines = [line.rstrip() for line in re.split(r"\r?\n", text)]
+    text = "\n".join(lines)
+    # Collapse 3+ newlines into 2
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()

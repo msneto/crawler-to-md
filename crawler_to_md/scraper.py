@@ -1,7 +1,8 @@
 import copy
+import io
 import json
 import os
-import tempfile
+import re
 import time
 from urllib.parse import urldefrag, urljoin
 
@@ -15,6 +16,20 @@ from .database_manager import DatabaseManager
 
 logger = log_setup.get_logger()
 logger.name = "Scraper"
+
+# Try to use lxml for faster parsing, fallback to html.parser
+try:
+    import lxml
+
+    DEFAULT_PARSER = "lxml"
+except ImportError:
+    DEFAULT_PARSER = "html.parser"
+
+# Import internal Markdownify for fast-path conversion
+try:
+    from markitdown.converters._markdownify import _CustomMarkdownify
+except ImportError:
+    _CustomMarkdownify = None
 
 
 class Scraper:
@@ -58,6 +73,16 @@ class Scraper:
         self.base_url = utils.normalize_url(base_url) if base_url else base_url
         self.exclude_patterns = exclude_patterns or []
         self.include_url_patterns = include_url_patterns or []
+
+        # Compile regex patterns for faster filtering
+        self._exclude_regex = None
+        if self.exclude_patterns:
+            self._exclude_regex = re.compile("|".join(re.escape(p) for p in self.exclude_patterns))
+
+        self._include_regex = None
+        if self.include_url_patterns:
+            self._include_regex = re.compile("|".join(re.escape(p) for p in self.include_url_patterns))
+
         self.db_manager = db_manager
         self.rate_limit = rate_limit
         self.delay = delay
@@ -182,7 +207,7 @@ class Scraper:
 
         try:
             if self.include_filters:
-                new_soup = BeautifulSoup("", "html.parser")
+                new_soup = BeautifulSoup("", DEFAULT_PARSER)
                 if soup.find("body"):
                     body = new_soup.new_tag("body")
                     new_soup.append(body)
@@ -201,19 +226,29 @@ class Scraper:
                 for element in self._find_elements(soup, selector):
                     element.decompose()
 
+            # Always remove script and style blocks (matching MarkItDown's HtmlConverter)
+            for script in soup(["script", "style"]):
+                script.extract()
+
             title = soup.title.string if soup.title else ""
             metadata = {"title": title}
 
-            filtered_html = str(soup)
-            with tempfile.NamedTemporaryFile(
-                mode="w+", delete=False, suffix=".html"
-            ) as tmp:
-                tmp.write(filtered_html)
-                tmp_path = tmp.name
-
-            markdown = str(self._get_markdown_converter().convert(tmp_path))
-
-            os.remove(tmp_path)
+            # Fast-path: Convert soup directly if _CustomMarkdownify is available
+            if _CustomMarkdownify:
+                logger.debug("Using Fast-Path conversion for %s", url)
+                # Note: we use convert_soup directly on the body or the whole soup
+                body_elm = soup.find("body")
+                raw_markdown = _CustomMarkdownify().convert_soup(body_elm or soup)
+                markdown = utils.normalize_markdown(raw_markdown)
+            else:
+                logger.debug("Using Slow-Path conversion for %s", url)
+                filtered_html = str(soup)
+                html_stream = io.BytesIO(filtered_html.encode("utf-8"))
+                markdown = str(
+                    self._get_markdown_converter().convert_stream(
+                        html_stream, file_extension=".html"
+                    )
+                )
 
             if not markdown.strip():
                 logger.warning("No content scraped from %s", url)
@@ -248,13 +283,10 @@ class Scraper:
             valid = False
         if self.base_url and not utils.is_url_in_scope(normalized_link, self.base_url):
             valid = False
-        if self.include_url_patterns and not any(
-            pattern in normalized_link for pattern in self.include_url_patterns
-        ):
+        if self._include_regex and not self._include_regex.search(normalized_link):
             valid = False
-        for pattern in self.exclude_patterns:
-            if pattern in normalized_link:
-                valid = False
+        if self._exclude_regex and self._exclude_regex.search(normalized_link):
+            valid = False
         logger.debug(f"Link validation for {normalized_link}: {valid}")
         return valid
 
@@ -285,7 +317,7 @@ class Scraper:
             else:
                 content = html
 
-            soup = BeautifulSoup(content, "html.parser")
+            soup = BeautifulSoup(content, DEFAULT_PARSER)
             return self._extract_links_from_soup(soup, url)
         except requests.RequestException as e:
             logger.error(f"Error fetching {url}: {e}")
@@ -303,7 +335,7 @@ class Scraper:
         Returns:
             tuple: A tuple containing the extracted content and metadata of the page.
         """
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, DEFAULT_PARSER)
         return self._scrape_page_from_soup(soup, url)
 
     def start_scraping(self, url=None, urls_list=None):
@@ -388,6 +420,10 @@ class Scraper:
                 break
 
             # Process each unvisited link
+            links_to_mark_visited = []
+            pages_to_upsert = []
+            all_discovered_links = set()
+
             for link in unvisited_links:
                 # Check rate limit
                 if self.rate_limit > 0:
@@ -413,102 +449,92 @@ class Scraper:
 
                 pbar.update(1)  # Update the progress bar
                 raw_url = link[0]
+                links_to_mark_visited.append(raw_url)
+
                 try:
                     url = utils.normalize_url(raw_url)
                 except ValueError:
-                    self.db_manager.mark_link_visited(raw_url)
                     continue
 
                 if not self.is_valid_link(url):
-                    self.db_manager.mark_link_visited(raw_url)
                     continue
 
                 # Attempt to fetch the page content
                 try:
-                    response = self.session.get(url, timeout=self.timeout)
+                    response = self.session.get(url, timeout=self.timeout, stream=True)
                     # Increment request count for rate limiting
                     request_count += 1
+
+                    # Check for a successful response and correct content type
+                    content_type = response.headers.get("content-type", "").lower()
+                    if response.status_code != 200 or "text/html" not in content_type:
+                        logger.info(
+                            "Skipping link %s due to invalid status code (%s) or content type (%s)",
+                            url,
+                            response.status_code,
+                            content_type,
+                        )
+                        response.close()
+                        continue
+
+                    # Extract the HTML content from the response
+                    html = response.text
+                    response.close()
                 except requests.RequestException as exc:
                     # Increment request count for rate limiting
                     request_count += 1
                     logger.error("Error fetching %s: %s", url, exc)
-                    self.db_manager.upsert_page(
-                        url,
-                        None,
-                        self._failed_scrape_metadata(
-                            status="failed",
-                            error_type=exc.__class__.__name__,
-                            error_message=str(exc),
-                        ),
-                    )
-                    self.db_manager.mark_link_visited(raw_url)
-                    continue
-
-                # Check for a successful response and correct content type
-                if response.status_code != 200 or not response.headers.get(
-                    "content-type", ""
-                ).startswith("text/html"):
-                    # Mark the link as visited and log the reason for skipping
-                    self.db_manager.mark_link_visited(raw_url)
-                    logger.info(
-                        "Skipping link %s due to invalid status code or content type",
-                        url,
+                    pages_to_upsert.append(
+                        (
+                            url,
+                            None,
+                            self._failed_scrape_metadata(
+                                status="failed",
+                                error_type=exc.__class__.__name__,
+                                error_message=str(exc),
+                            ),
+                        )
                     )
                     continue
-
-                # Extract the HTML content from the response
-                html = response.text
 
                 # Parse once and reuse for extraction and link discovery
-                soup = BeautifulSoup(html, "html.parser")
-                discovered_links = set()
+                soup = BeautifulSoup(html, DEFAULT_PARSER)
                 if not urls_list:
-                    discovered_links = self._extract_links_from_soup(soup, url)
+                    all_discovered_links.update(self._extract_links_from_soup(soup, url))
 
                 # Scrape the page for content and metadata
                 content, metadata = self._scrape_page_from_soup(soup, url)
 
-                # Insert or update scraped data in the database
+                # Collect scraped data for batch upsert
                 if content is None:
-                    self.db_manager.upsert_page(
-                        url,
-                        None,
-                        self._failed_scrape_metadata(
-                            status="failed",
-                            error_type="NoContentError",
-                            error_message="No content extracted",
-                        ),
+                    pages_to_upsert.append(
+                        (
+                            url,
+                            None,
+                            self._failed_scrape_metadata(
+                                status="failed",
+                                error_type="NoContentError",
+                                error_message="No content extracted",
+                            ),
+                        )
                     )
                 else:
-                    self.db_manager.upsert_page(url, content, json.dumps(metadata))
+                    pages_to_upsert.append((url, content, json.dumps(metadata)))
 
-                # Fetch and insert new links found on the page,
-                # if not working from a predefined list
-                if not urls_list:
-                    new_links = discovered_links
+            # Perform batch database updates
+            if pages_to_upsert:
+                self.db_manager.upsert_pages(pages_to_upsert)
 
-                    # Count and insert new links into the database in batch
-                    real_new_links_count = 0
-                    if new_links:
-                        if hasattr(self.db_manager, "insert_links"):
-                            real_new_links_count = self.db_manager.insert_links(
-                                list(new_links)
-                            )
-                        else:
-                            for new_url in new_links:
-                                if self.db_manager.insert_link(new_url):
-                                    real_new_links_count += 1
-                                    logger.debug(
-                                        f"Inserted new link {new_url} into the database"
-                                    )
+            if not urls_list and all_discovered_links:
+                real_new_links_count = self.db_manager.insert_links(
+                    list(all_discovered_links)
+                )
+                if real_new_links_count:
+                    pbar.total += real_new_links_count
+                    pbar.refresh()
 
-                    # Update the progress bar total with the count of new links
-                    if real_new_links_count:
-                        pbar.total += real_new_links_count
-                        pbar.refresh()
-
-                # Mark the current link as visited in the database
-                self.db_manager.mark_link_visited(raw_url)
+            if links_to_mark_visited:
+                self.db_manager.mark_links_visited(links_to_mark_visited)
 
         # Close the progress bar upon completion of the scraping process
         pbar.close()

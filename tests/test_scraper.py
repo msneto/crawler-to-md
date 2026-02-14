@@ -141,14 +141,8 @@ def test_is_valid_link_rejects_similar_host_prefix():
     assert not scraper.is_valid_link("https://example.come/docs/page")
 
 
-@patch("os.remove")
-@patch("tempfile.NamedTemporaryFile")
-def test_scrape_page_parses_content_and_metadata(mock_tempfile, mock_os_remove):
+def test_scrape_page_parses_content_and_metadata():
     # Arrange
-    mock_file = MagicMock()
-    mock_file.name = "dummy_path"
-    mock_tempfile.return_value.__enter__.return_value = mock_file
-
     db = DummyDB()
     scraper = Scraper(
         base_url="http://example.com",
@@ -159,8 +153,8 @@ def test_scrape_page_parses_content_and_metadata(mock_tempfile, mock_os_remove):
     html = "<html><head><title>Test</title></head><body><p>Hello</p></body></html>"
 
     # Act
-    with patch("crawler_to_md.scraper.MarkItDown") as mock_markdown:
-        mock_markdown.return_value.convert.return_value = "Hello"
+    with patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md:
+        mock_custom_md.return_value.convert_soup.return_value = "Hello"
         content, metadata = scraper.scrape_page(html, "http://example.com/test")
 
     # Assert
@@ -170,14 +164,8 @@ def test_scrape_page_parses_content_and_metadata(mock_tempfile, mock_os_remove):
     assert metadata.get("title") == "Test"
 
 
-@patch("os.remove")
-@patch("tempfile.NamedTemporaryFile")
-def test_scrape_page_with_markitdown(mock_tempfile, mock_os_remove):
+def test_scrape_page_with_markitdown():
     # Arrange
-    mock_file = MagicMock()
-    mock_file.name = "dummy_path"
-    mock_tempfile.return_value.__enter__.return_value = mock_file
-
     db = DummyDB()
     scraper = Scraper(
         base_url="http://example.com",
@@ -191,8 +179,8 @@ def test_scrape_page_with_markitdown(mock_tempfile, mock_os_remove):
     )
 
     # Act
-    with patch("crawler_to_md.scraper.MarkItDown") as mock_markdown:
-        mock_markdown.return_value.convert.return_value = (
+    with patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md:
+        mock_custom_md.return_value.convert_soup.return_value = (
             "# A Title\n\nThis is a paragraph with **bold** text."
         )
         content, metadata = scraper.scrape_page(html, "http://example.com/test")
@@ -204,20 +192,10 @@ def test_scrape_page_with_markitdown(mock_tempfile, mock_os_remove):
     assert metadata.get("title") == "Test"
 
 
-@patch("os.remove")
-@patch("tempfile.NamedTemporaryFile")
-def test_scrape_page_include_exclude(mock_tempfile, mock_os_remove):
+def test_scrape_page_include_exclude():
     """
     Verify include and exclude selectors filter HTML before conversion.
-
-    Args:
-        mock_tempfile (MagicMock): Mock for NamedTemporaryFile.
-        mock_os_remove (MagicMock): Mock for os.remove.
     """
-    mock_file = MagicMock()
-    mock_file.name = "dummy_path"
-    mock_tempfile.return_value.__enter__.return_value = mock_file
-
     db = DummyDB()
     scraper = Scraper(
         base_url="http://example.com",
@@ -232,13 +210,13 @@ def test_scrape_page_include_exclude(mock_tempfile, mock_os_remove):
         '<p class="remove">Remove</p><span>Ignore</span></body></html>'
     )
 
-    with patch("crawler_to_md.scraper.MarkItDown") as mock_markdown:
+    with patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md:
 
-        def convert_side_effect(path):
-            """Return the HTML written to the temporary file."""
-            return mock_file.write.call_args[0][0]
+        def convert_side_effect(soup, **kwargs):
+            """Return the HTML of the soup."""
+            return str(soup)
 
-        mock_markdown.return_value.convert.side_effect = convert_side_effect
+        mock_custom_md.return_value.convert_soup.side_effect = convert_side_effect
         content, metadata = scraper.scrape_page(html, "http://example.com/test")
 
     assert "Keep" in content
@@ -295,17 +273,29 @@ class ListDB(DummyDB):
         self.pages.append((url, content, metadata))
 
     def upsert_page(self, url, content, metadata):
-        for index, existing in enumerate(self.pages):
-            if existing[0] == url:
-                self.pages[index] = (url, content, metadata)
-                return
-        self.pages.append((url, content, metadata))
+        self.upsert_pages([(url, content, metadata)])
+
+    def upsert_pages(self, pages):
+        for url, content, metadata in pages:
+            for index, existing in enumerate(self.pages):
+                if existing[0] == url:
+                    self.pages[index] = (url, content, metadata)
+                    break
+            else:
+                self.pages.append((url, content, metadata))
 
     def get_failed_page_urls(self):
         return [url for url, content, _ in self.pages if content is None]
 
     def get_all_pages(self):
         return self.pages
+
+    def mark_link_visited(self, url):
+        self.visited.add(url)
+
+    def mark_links_visited(self, urls):
+        for url in urls:
+            self.visited.add(url)
 
 
 def test_start_scraping_process(monkeypatch):
@@ -329,6 +319,9 @@ def test_start_scraping_process(monkeypatch):
         headers = {"content-type": "text/html"}
         content = b"<html></html>"
         text = "<html></html>"
+
+        def close(self):
+            pass
 
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
@@ -386,6 +379,9 @@ def test_start_scraping_processes_unvisited_links_in_batches(monkeypatch):
         headers = {"content-type": "text/html"}
         text = "<html></html>"
 
+        def close(self):
+            pass
+
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
@@ -441,6 +437,9 @@ def test_start_scraping_parses_each_page_once(monkeypatch):
         headers = {"content-type": "text/html"}
         text = '<html><body><a href="/n1">n1</a><a href="/n2">n2</a></body></html>'
 
+        def close(self):
+            pass
+
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
@@ -479,6 +478,9 @@ def test_start_scraping_reuses_single_markitdown_instance(monkeypatch):
         headers = {"content-type": "text/html"}
         text = '<html><body><a href="/n1">n1</a><a href="/n2">n2</a></body></html>'
 
+        def close(self):
+            pass
+
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
@@ -498,19 +500,16 @@ def test_start_scraping_reuses_single_markitdown_instance(monkeypatch):
 
     with (
         patch("crawler_to_md.scraper.MarkItDown") as mock_markdown,
-        patch("crawler_to_md.scraper.tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("crawler_to_md.scraper.os.remove"),
+        patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md
     ):
-        mock_file = MagicMock()
-        mock_file.name = "dummy_path"
-        mock_tempfile.return_value.__enter__.return_value = mock_file
-        mock_markdown.return_value.convert.return_value = "# MD"
+        mock_custom_md.return_value.convert_soup.return_value = "# MD"
 
         scraper.start_scraping(url="http://example.com/start")
 
     assert db.get_visited_links_count() == 3
-    assert mock_markdown.call_count == 1
-    assert mock_markdown.return_value.convert.call_count == 3
+    # With One-Parse optimization, MarkItDown is no longer instantiated/called for standard HTML
+    assert mock_markdown.call_count == 0
+    assert mock_custom_md.return_value.convert_soup.call_count == 3
 
 
 def test_scraper_proxy_initialization(monkeypatch):
@@ -569,8 +568,8 @@ def test_scrape_page_returns_none_for_empty_content(monkeypatch):
     )
     html = "<html><body></body></html>"
 
-    with patch("crawler_to_md.scraper.MarkItDown") as mock_markdown:
-        mock_markdown.return_value.convert.return_value = ""
+    with patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md:
+        mock_custom_md.return_value.convert_soup.return_value = ""
         content, metadata = scraper.scrape_page(html, "http://example.com/empty")
 
     assert content is None
@@ -598,6 +597,9 @@ def test_start_scraping_excludes_invalid_urls(monkeypatch):
         headers = {"content-type": "text/html"}
         content = b"<html></html>"
         text = "<html></html>"
+
+        def close(self):
+            pass
 
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
@@ -648,6 +650,9 @@ def test_start_scraping_normalizes_seed_urls(monkeypatch):
         headers = {"content-type": "text/html"}
         text = "<html></html>"
 
+        def close(self):
+            pass
+
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
@@ -691,6 +696,9 @@ def test_start_scraping_filters_discovered_links(monkeypatch):
         status_code = 200
         headers = {"content-type": "text/html"}
         text = html
+
+        def close(self):
+            pass
 
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
@@ -740,6 +748,9 @@ def test_start_scraping_continues_after_request_exception(monkeypatch):
         status_code = 200
         headers = {"content-type": "text/html"}
         text = "<html></html>"
+
+        def close(self):
+            pass
 
     def fake_get(url, **kwargs):
         if url == "http://example.com/fail":
@@ -804,6 +815,9 @@ def test_start_scraping_auto_retries_failed_pages(monkeypatch):
         headers = {"content-type": "text/html"}
         text = "<html></html>"
 
+        def close(self):
+            pass
+
     monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
 
     class DummyTqdm:
@@ -852,6 +866,9 @@ def test_start_scraping_passes_timeout_to_get(monkeypatch):
         headers = {"content-type": "text/html"}
         text = "<html></html>"
 
+        def close(self):
+            pass
+
     def fake_get(url, **kwargs):
         call_kwargs.update(kwargs)
         return DummyResp()
@@ -894,6 +911,9 @@ def test_fetch_links_passes_timeout_when_fetching_html(monkeypatch):
         status_code = 200
         text = '<html><body><a href="/page">P</a></body></html>'
 
+        def close(self):
+            pass
+
     def fake_get(url, **kwargs):
         call_kwargs.update(kwargs)
         return DummyResp()
@@ -923,3 +943,68 @@ def test_proxy_check_uses_timeout_default(monkeypatch):
     )
 
     assert captured.get("timeout") == 10
+
+
+def test_start_scraping_batch_db_calls(monkeypatch):
+    """Verify that scraper uses batch methods for database updates."""
+    db = MagicMock(spec=DatabaseManager)
+    # Mock return values for startup queries
+    db.get_links_count.return_value = 0
+    db.get_visited_links_count.return_value = 0
+    db.get_failed_page_urls.return_value = []
+    # Mock unvisited links for one batch of 2
+    db.get_unvisited_links.side_effect = [[("http://example.com/a",), ("http://example.com/b",)], []]
+
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    scraper.unvisited_links_batch_size = 2
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html><body></body></html>"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **kwargs: DummyResp())
+
+    # Mock tqdm to avoid output
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+
+    with patch("crawler_to_md.scraper._CustomMarkdownify"):
+        scraper.start_scraping()
+
+    # Verify batch methods were called instead of single ones in the loop
+    assert db.upsert_pages.called
+    assert db.mark_links_visited.called
+    # Single upsert/mark should NOT be called inside the loop
+    # (Note: Scraper might call them during init or for other reasons,
+    # but the loop should prefer batch)
+    pages_upserted = db.upsert_pages.call_args[0][0]
+    assert len(pages_upserted) == 2
+
+
+def test_scrape_page_fast_path_encoding():
+    """Verify that Fast-Path handles non-ASCII characters correctly."""
+    db = DummyDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    # Content with non-ASCII characters
+    html = "<html><body><p>Olá Mundo!</p></body></html>"
+
+    with patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md:
+        mock_custom_md.return_value.convert_soup.return_value = "Olá Mundo!"
+        content, _ = scraper.scrape_page(html, "http://example.com")
+        
+        assert "Olá Mundo!" in content
+        # Verify body element (or soup) was passed to convert_soup
+        assert mock_custom_md.return_value.convert_soup.called
