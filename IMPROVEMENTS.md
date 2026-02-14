@@ -122,15 +122,13 @@ Burstiness and coarse pacing; can be inefficient and unfriendly to target server
 
 ### 10) Requests session not tuned for retry/connection pool policy
 **Current context**
-Session is used but no custom adapter pool/retry strategy configured.
+Optimized. Configured with `HTTPAdapter`, connection pooling, and `urllib3.Retry`.
 
-**Why suboptimal**
+**Why suboptimal (Before Fix)**
 Lost opportunities for connection reuse and robust transient error handling.
 
-**Possible solutions**
-- **[Rank 1]** Configure `HTTPAdapter` pool sizes.
-- **[Rank 2]** Add urllib3 `Retry` for transient statuses/timeouts (idempotent-safe policy).
-- **[Rank 3]** Introduce transport layer abstraction (requests now, alternate clients later).
+**Solution (Implemented)**
+Configured `HTTPAdapter` with `pool_connections=10`, `pool_maxsize=10`, and a `Retry` strategy for transient statuses (429, 500, 502, 503, 504) and idempotent-safe methods.
 
 ---
 
@@ -168,15 +166,13 @@ Wasted CPU and memory in exactly the common minified flow.
 
 ### 15) JSON pretty-print (`indent=4`) always enabled
 **Current context**
-JSON export always pretty-formats.
+Optimized. Automatically compacts when `--minify` is enabled.
 
-**Why suboptimal**
+**Why suboptimal (Before Fix)**
 Larger files and slower writes; unnecessary for machine-ingestion flows.
 
-**Possible solutions**
-- **[Rank 1]** Add `--json-indent` option with default current behavior.
-- **[Rank 2]** Auto-compact JSON when `--minify` is on.
-- **[Rank 3]** Profile-based output presets (`human`, `ai`, `archive`).
+**Solution (Implemented)**
+Linked JSON formatting to the `--minify` flag. When enabled, it uses `indent=None` and compact separators `(",", ":")`.
 
 ### 16) Individual markdown path mapping uses basic string replace
 **Current context**
@@ -196,15 +192,13 @@ Can lead to edge-case path correctness/security issues with complex URLs.
 
 ### 17) Database connection cleanup relies on `__del__`
 **Current context**
-Connection closes in destructor.
+Optimized. Explicit `close()` is called in the CLI `finally` block.
 
-**Why suboptimal**
+**Why suboptimal (Before Fix)**
 Destructor timing is non-deterministic; can leak handles in longer-lived contexts.
 
-**Possible solutions**
-- **[Rank 1]** Add explicit `close()` and call from CLI `finally`.
-- **[Rank 2]** Implement context manager (`with DatabaseManager(...) as db:`).
-- **[Rank 3]** Introduce repository/service layer with explicit lifecycle ownership.
+**Solution (Implemented)**
+Added an explicit `close()` method to `DatabaseManager` and ensured it is called within a `finally` block in `cli.py`.
 
 ### 18) Logging setup may duplicate handlers over time
 **Current context**

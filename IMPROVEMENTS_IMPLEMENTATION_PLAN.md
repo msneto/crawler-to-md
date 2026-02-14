@@ -15,6 +15,7 @@ Primary target profile:
 - **Phase 1 Complete**: Indexing, Batching, Linear concatenation.
 - **Phase 2 Complete**: One-parse logic, URL normalization, Lifecycle management.
 - **Phase 3 Complete**: Streaming exports (Markdown/JSON/Individual) via `get_pages_iterator`.
+- **Phase 4 Started**: Requests adapter tuning and retries implemented.
 - **Explore Mode Wins**: 
     - Integrated `lxml` for 3x-10x parsing speedup.
     - Implemented **Fast-Path** (Direct DOM conversion) to eliminate second parse.
@@ -59,6 +60,7 @@ Risk scale:
 - Task 3.1: Cursor-based page iterator in `DatabaseManager`.
 - Task 3.2: Streamed compiled Markdown export.
 - Task 3.3: Streamed JSON and Individual exports.
+- Task 4.1: Requests adapter tuning and retries.
 
 ---
 
