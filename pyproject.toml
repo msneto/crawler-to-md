@@ -41,9 +41,11 @@ version_scheme = "post-release"
 local_scheme   = "no-local-version"
 
 # Optional dependencies for additional features or development
-# Uncomment and customize as needed
-# [project.optional-dependencies]
-# dev = ["pytest", "ruff"]
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.5",
+    "requests-mock==1.12.1",
+]
 
 # Entry points for command-line interface scripts
 [project.scripts]
