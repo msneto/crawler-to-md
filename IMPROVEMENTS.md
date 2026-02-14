@@ -22,51 +22,43 @@ For each improvement:
 
 ### 1) Double HTML parse per page (content + links)
 **Current context**
-The scraper parses HTML in `scrape_page()` and also parses again in `fetch_links()` for the same response body.
+Optimized. The scraper now uses a "One-Parse" architecture with `lxml`.
 
-**Why suboptimal**
-BeautifulSoup parsing is expensive. Parsing twice per page increases CPU significantly in large crawls.
+**Why suboptimal (Before Fix)**
+BeautifulSoup parsing is expensive. Parsing twice per page doubled CPU costs.
 
-**Possible solutions**
-- **[Rank 1]** Keep API intact but pass pre-parsed links list from `scrape_page()` back to caller.
-- **[Rank 2]** Refactor into one `process_page(html, url)` flow that returns markdown, metadata, and discovered links.
-- **[Rank 3]** Introduce a pipeline stage model (fetch -> parse -> extract -> convert -> persist) with explicit page artifacts.
+**Solution (Implemented)**
+Implemented a **Fast-Path** that reuses the initial `lxml` DOM for both link extraction and Markdown conversion (via internal `CustomMarkdownify`).
 
 ### 2) Temporary file + per-page converter instantiation
 **Current context**
-Each page conversion writes filtered HTML to a temp file, instantiates `MarkItDown()`, converts, then removes the file.
+Optimized. Conversion is now in-memory and reuses a single converter instance.
 
-**Why suboptimal**
+**Why suboptimal (Before Fix)**
 High per-page overhead: disk I/O, filesystem churn, repeated object setup.
 
-**Possible solutions**
-- **[Rank 1]** Reuse one converter instance per scraper run.
-- **[Rank 2]** Move conversion to in-memory string/bytes path (if supported by converter API), avoiding temp files.
-- **[Rank 3]** Add converter abstraction with pluggable engines and worker model for high-throughput conversion.
+**Solution (Implemented)**
+Switched to `io.BytesIO` streams and direct DOM-to-Markdown conversion, bypassing the disk entirely. Reused one `MarkItDown` instance (as a fallback) per scraper run.
 
 ### 3) Per-link DB insert in discovery loop
 **Current context**
-Discovered links are inserted one-by-one with individual SQL calls.
+Optimized. Uses batch inserts.
 
-**Why suboptimal**
-SQLite overhead dominates when link counts are high.
+**Why suboptimal (Before Fix)**
+SQLite transaction overhead dominated large crawls.
 
-**Possible solutions**
-- **[Rank 1]** Keep method signature but add simple list-mode fast path with `executemany`.
-- **[Rank 2]** Add explicit `insert_links_bulk(urls)` and use chunked batches.
-- **[Rank 3]** Introduce write-behind buffering (flush by size/time), with explicit durability checkpoints.
+**Solution (Implemented)**
+Added `insert_links` and `upsert_pages` batch methods to `DatabaseManager`. The scraping loop now groups updates.
 
 ### 4) Full unvisited list fetch each loop
 **Current context**
-Crawler repeatedly queries and loads all unvisited links, then iterates.
+Optimized. Uses `LIMIT` batching.
 
-**Why suboptimal**
+**Why suboptimal (Before Fix)**
 Inefficient with large queues; repeated full scans and list materialization.
 
-**Possible solutions**
-- **[Rank 1]** Add `LIMIT` batching (`get_unvisited_links(limit=...)`).
-- **[Rank 2]** Add "pop next N" semantics to reduce race/duplicate work patterns.
-- **[Rank 3]** Implement queue-like crawl state with priority/frontier strategy.
+**Solution (Implemented)**
+Implemented `get_unvisited_links(limit=...)` to process the queue in manageable chunks.
 
 ### 5) Missing index on `links.visited`
 **Current context**
@@ -146,39 +138,21 @@ Lost opportunities for connection reuse and robust transient error handling.
 
 ### 11) `get_all_pages()` loads entire dataset for exports
 **Current context**
-Markdown/JSON/individual export all load all pages into memory first.
+Optimized. Uses cursor-based iteration.
 
-**Why suboptimal**
+**Why suboptimal (Before Fix)**
 RAM spikes for large crawls and slower startup to first write.
 
-**Possible solutions**
-- **[Rank 1]** Add cursor iterator generator (`iter_pages(fetch_size=...)`).
-- **[Rank 2]** Convert exporters to streaming writes.
-- **[Rank 3]** Multi-target export pipeline with shared stream transforms.
+**Solution (Implemented)**
+Implemented `get_pages_iterator()` using `fetchmany(100)` to stream records from SQLite.
 
 ### 12) Markdown concatenation uses repeated `+=` on large string
 **Current context**
-Compiled markdown is built by repeated string concatenation.
-
-**Why suboptimal**
-Costly realloc/copy behavior as output grows.
-
-**Possible solutions**
-- **[Rank 1]** Build list of chunks then `"".join(...)`.
-- **[Rank 2]** Write incrementally to file handle.
-- **[Rank 3]** Introduce stream composition layer with transform stages.
+Fixed. Uses `"".join(parts)`.
 
 ### 13) Cleanup called repeatedly on growing output
 **Current context**
-`_cleanup_markdown()` is called inside loop over pages.
-
-**Why suboptimal**
-Repeated processing over accumulated content tends toward quadratic behavior.
-
-**Possible solutions**
-- **[Rank 1]** Call cleanup once at the end.
-- **[Rank 2]** Apply cleanup per-page before append, plus final tiny normalize pass.
-- **[Rank 3]** Replace with single-pass streaming normalizer.
+Fixed. `_cleanup_markdown` is called once after concatenation.
 
 ### 14) Minify mode generates metadata/comments then strips them
 **Current context**
@@ -234,15 +208,27 @@ Destructor timing is non-deterministic; can leak handles in longer-lived context
 
 ### 18) Logging setup may duplicate handlers over time
 **Current context**
-Custom handler + `coloredlogs.install()` can stack handlers if setup called repeatedly.
+Fixed. Setup is now idempotent.
 
-**Why suboptimal**
-Duplicate log lines and extra overhead.
+### 25) Regex-based URL Filtering
+**Current context**
+Optimized. Patterns are pre-compiled.
 
-**Possible solutions**
-- **[Rank 1]** Guard setup with "already configured" check.
-- **[Rank 2]** Centralize logger bootstrap in one entrypoint function.
-- **[Rank 3]** Structured logging refactor with dedicated logging config module and contexts.
+**Why suboptimal (Before Fix)**
+Iterating through exclusion lists in a Python loop for every discovered link was slow ($O(N \times M)$).
+
+**Solution (Implemented)**
+Pre-compiles all include/exclude patterns into a single optimized regex object for $O(N)$ matching.
+
+### 26) Early Network Termination (`stream=True`)
+**Current context**
+Optimized. Checks headers before download.
+
+**Why suboptimal (Before Fix)**
+The scraper downloaded full bodies of all assets (images, zips) just to check the `Content-Type`.
+
+**Solution (Implemented)**
+Uses `stream=True` to inspect headers and immediately close connections for non-HTML resources.
 
 ### 19) Scraper loop is monolithic
 **Current context**
