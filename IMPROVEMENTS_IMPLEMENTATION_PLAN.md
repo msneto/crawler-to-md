@@ -62,6 +62,7 @@ Risk scale:
 - Task 3.2: Streamed compiled Markdown export.
 - Task 3.3: Streamed JSON and Individual exports.
 - Task 4.1: Requests adapter tuning and retries.
+- Task 4.2: Retry policy guardrails for failed pages.
 
 ---
 
@@ -117,6 +118,7 @@ Risk scale:
 - **Validation**:
   - `pytest tests/test_scraper.py -k retry`
 - **Effort/Risk**: L / Med
+- **Status**: Complete
 
 ### Task 4.3 - Improve rate limiting algorithm
 - **Items covered**: Improvement #9.
