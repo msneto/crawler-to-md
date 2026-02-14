@@ -47,6 +47,7 @@ class Scraper:
         proxy=None,
         include_filters=None,
         exclude_filters=None,
+        max_retries=3,
     ):
         """
         Initialize the Scraper object and log the initialization process.
@@ -65,6 +66,7 @@ class Scraper:
                 of elements to include before Markdown conversion.
             exclude_filters (list, optional): CSS-like selectors (#id, .class, tag)
                 of elements to exclude before Markdown conversion.
+            max_retries (int): Maximum number of retries for failed pages.
 
         Raises:
             ValueError: If a proxy is provided but unreachable.
@@ -72,6 +74,10 @@ class Scraper:
         logger.debug(f"Initializing Scraper with base URL: {base_url}")
         self.base_url = utils.normalize_url(base_url) if base_url else base_url
         self.exclude_patterns = exclude_patterns or []
+        self.include_url_patterns = include_url_patterns or []
+        self.max_retries = max_retries
+
+        # Compile regex patterns for faster filtering
         self.include_url_patterns = include_url_patterns or []
 
         # Compile regex patterns for faster filtering
@@ -396,7 +402,9 @@ class Scraper:
                 self.db_manager.insert_link(normalized_url)
 
         # Auto-retry previously failed pages (content IS NULL)
-        for failed_url in self.db_manager.get_failed_page_urls():
+        # Only retry if they haven't exceeded the max_retries limit
+        retriable_urls = self.db_manager.get_retriable_failed_urls(self.max_retries)
+        for failed_url in retriable_urls:
             try:
                 normalized_failed_url = utils.normalize_url(failed_url)
             except ValueError:
@@ -439,6 +447,8 @@ class Scraper:
             # Process each unvisited link
             links_to_mark_visited = []
             pages_to_upsert = []
+            retry_increments = []
+            retry_resets = []
             all_discovered_links = set()
 
             for link in unvisited_links:
@@ -492,6 +502,29 @@ class Scraper:
                             content_type,
                         )
                         response.close()
+                        # If it's a 5xx error or rate limit, we might want to retry
+                        # For now, treat non-200/non-HTML as visited and failed
+                        # (no retry increment unless exception)
+                        # But wait, to properly handle transient errors that are NOT
+                        # exceptions (like 500 Internal Server Error returned by
+                        # requests), we should increment retry count.
+                        if response.status_code >= 500 or response.status_code == 429:
+                            retry_increments.append(url)
+                            pages_to_upsert.append(
+                                (
+                                    url,
+                                    None,
+                                    self._failed_scrape_metadata(
+                                        status="failed",
+                                        error_type="HTTPError",
+                                        error_message=f"Status {response.status_code}",
+                                    ),
+                                )
+                            )
+                        else:
+                            # 404, 403, or non-HTML -> Permanent failure,
+                            # don't increment retry (stop retrying)
+                            pass
                         continue
 
                     # Extract the HTML content from the response
@@ -501,6 +534,7 @@ class Scraper:
                     # Increment request count for rate limiting
                     request_count += 1
                     logger.error("Error fetching %s: %s", url, exc)
+                    retry_increments.append(url)
                     pages_to_upsert.append(
                         (
                             url,
@@ -525,6 +559,10 @@ class Scraper:
 
                 # Collect scraped data for batch upsert
                 if content is None:
+                    # Treat scraping failure (after successful fetch) as a
+                    # transient error? Or content extraction error?
+                    # Let's treat as failure to be safe.
+                    retry_increments.append(url)
                     pages_to_upsert.append(
                         (
                             url,
@@ -538,10 +576,15 @@ class Scraper:
                     )
                 else:
                     pages_to_upsert.append((url, content, json.dumps(metadata)))
+                    retry_resets.append(url)
 
             # Perform batch database updates
-            if pages_to_upsert:
-                self.db_manager.upsert_pages(pages_to_upsert)
+            self.db_manager.commit_crawl_batch(
+                pages_upsert=pages_to_upsert,
+                visited_updates=links_to_mark_visited,
+                retry_increments=retry_increments,
+                retry_resets=retry_resets,
+            )
 
             if not urls_list and all_discovered_links:
                 real_new_links_count = self.db_manager.insert_links(
@@ -550,9 +593,6 @@ class Scraper:
                 if real_new_links_count:
                     pbar.total += real_new_links_count
                     pbar.refresh()
-
-            if links_to_mark_visited:
-                self.db_manager.mark_links_visited(links_to_mark_visited)
 
         # Close the progress bar upon completion of the scraping process
         pbar.close()

@@ -30,7 +30,15 @@ class DummyDB(DatabaseManager):
     def get_failed_page_urls(self):
         return []
 
+    def get_retriable_failed_urls(self, max_retries):
+        return []
+
     def upsert_page(self, url, content, metadata):
+        pass
+
+    def commit_crawl_batch(
+        self, pages_upsert, visited_updates, retry_increments, retry_resets
+    ):
         pass
 
 
@@ -229,6 +237,7 @@ class ListDB(DummyDB):
     def __init__(self):
         self.links = []
         self.visited = set()
+        self.retry_counts = {}
         self.pages = []
         self.unvisited_query_limits = []
 
@@ -238,6 +247,7 @@ class ListDB(DummyDB):
         for u in urls:
             if u not in self.links:
                 self.links.append(u)
+                self.retry_counts[u] = 0
                 inserted = True
         return inserted
 
@@ -246,6 +256,7 @@ class ListDB(DummyDB):
         for u in urls:
             if u not in self.links:
                 self.links.append(u)
+                self.retry_counts[u] = 0
                 count += 1
         return count
 
@@ -287,12 +298,29 @@ class ListDB(DummyDB):
     def get_failed_page_urls(self):
         return [url for url, content, _ in self.pages if content is None]
 
+    def get_retriable_failed_urls(self, max_retries):
+        return [
+            url
+            for url, content, _ in self.pages
+            if content is None and self.retry_counts.get(url, 0) < max_retries
+        ]
+
     def get_all_pages(self):
         return self.pages
 
     def mark_links_visited(self, urls):
         for url in urls:
             self.visited.add(url)
+
+    def commit_crawl_batch(
+        self, pages_upsert, visited_updates, retry_increments, retry_resets
+    ):
+        self.upsert_pages(pages_upsert)
+        self.mark_links_visited(visited_updates)
+        for url in retry_increments:
+            self.retry_counts[url] = self.retry_counts.get(url, 0) + 1
+        for url in retry_resets:
+            self.retry_counts[url] = 0
 
 
 def test_start_scraping_process(monkeypatch):
@@ -497,7 +525,7 @@ def test_start_scraping_reuses_single_markitdown_instance(monkeypatch):
 
     with (
         patch("crawler_to_md.scraper.MarkItDown") as mock_markdown,
-        patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md
+        patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md,
     ):
         mock_custom_md.return_value.convert_soup.return_value = "# MD"
 
@@ -949,7 +977,7 @@ def test_start_scraping_batch_db_calls(monkeypatch):
     # Mock return values for startup queries
     db.get_links_count.return_value = 0
     db.get_visited_links_count.return_value = 0
-    db.get_failed_page_urls.return_value = []
+    db.get_retriable_failed_urls.return_value = []
     # Mock unvisited links for one batch of 2
     db.get_unvisited_links.side_effect = [
         [("http://example.com/a",), ("http://example.com/b",)],
@@ -981,13 +1009,127 @@ def test_start_scraping_batch_db_calls(monkeypatch):
         scraper.start_scraping()
 
     # Verify batch methods were called instead of single ones in the loop
-    assert db.upsert_pages.called
-    assert db.mark_links_visited.called
+    assert db.commit_crawl_batch.called
+    call_args = db.commit_crawl_batch.call_args[1]
+    assert len(call_args["pages_upsert"]) == 2
+    assert len(call_args["visited_updates"]) == 2
     # Single upsert/mark should NOT be called inside the loop
     # (Note: Scraper might call them during init or for other reasons,
     # but the loop should prefer batch)
-    pages_upserted = db.upsert_pages.call_args[0][0]
-    assert len(pages_upserted) == 2
+    assert not db.upsert_pages.called
+
+
+def test_retry_increments_on_failure(monkeypatch):
+    db = MagicMock(spec=DatabaseManager)
+    db.get_links_count.return_value = 0
+    db.get_visited_links_count.return_value = 0
+    db.get_retriable_failed_urls.return_value = []
+    # Two links: one fails with 500, one fails with exception
+    db.get_unvisited_links.side_effect = [
+        [("http://example.com/500",), ("http://example.com/error",)],
+        [],
+    ]
+
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+    scraper.unvisited_links_batch_size = 2
+
+    # Mock responses
+    class DummyResp:
+        def __init__(self, status):
+            self.status_code = status
+            self.headers = {"content-type": "text/html"}
+            self.text = ""
+
+        def close(self):
+            pass
+
+    def fake_get(url, **kwargs):
+        if "500" in url:
+            return DummyResp(500)
+        if "error" in url:
+            raise requests.RequestException("boom")
+        return DummyResp(200)
+
+    monkeypatch.setattr(scraper.session, "get", fake_get)
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+
+    scraper.start_scraping()
+
+    assert db.commit_crawl_batch.called
+    call_args = db.commit_crawl_batch.call_args[1]
+    retry_increments = call_args["retry_increments"]
+    assert "http://example.com/500" in retry_increments
+    assert "http://example.com/error" in retry_increments
+    # Ensure they are also upserted as failed pages
+    failed_urls = [p[0] for p in call_args["pages_upsert"]]
+    assert "http://example.com/500" in failed_urls
+    assert "http://example.com/error" in failed_urls
+
+
+def test_retry_reset_on_success(monkeypatch):
+    db = MagicMock(spec=DatabaseManager)
+    db.get_links_count.return_value = 0
+    db.get_visited_links_count.return_value = 0
+    db.get_retriable_failed_urls.return_value = []
+    db.get_unvisited_links.side_effect = [[("http://example.com/ok",)], []]
+
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html></html>"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: DummyResp())
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+
+    with patch("crawler_to_md.scraper._CustomMarkdownify") as mock_custom_md:
+        mock_custom_md.return_value.convert_soup.return_value = "content"
+        scraper.start_scraping()
+
+    assert db.commit_crawl_batch.called
+    call_args = db.commit_crawl_batch.call_args[1]
+    retry_resets = call_args["retry_resets"]
+    assert "http://example.com/ok" in retry_resets
+
+
+def test_start_scraping_uses_retriable_failed_urls(monkeypatch):
+    db = MagicMock(spec=DatabaseManager)
+    db.get_retriable_failed_urls.return_value = ["http://example.com/retry_me"]
+    db.get_links_count.return_value = 0
+    db.get_visited_links_count.return_value = 0
+    db.get_unvisited_links.return_value = []
+
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+        max_retries=5,
+    )
+
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+
+    scraper.start_scraping()
+
+    # Should call get_retriable_failed_urls with configured max_retries
+    db.get_retriable_failed_urls.assert_called_with(5)
+    # Should requeue the returned url
+    db.insert_link.assert_any_call("http://example.com/retry_me")
+    db.mark_link_unvisited.assert_any_call("http://example.com/retry_me")
 
 
 def test_scrape_page_fast_path_encoding():
@@ -1047,15 +1189,18 @@ def test_scraper_retries_behavior_with_mock(monkeypatch):
         # This tests that our code handles a sequence of responses if we were to
         # call it multiple times, OR if the adapter was active.
         # Note: requests-mock 1.12.1 + requests 2.32 bypasses HTTPAdapter retries.
-        m.get("http://example.com", [
-            {"text": "Service Unavailable", "status_code": 503},
-            {"text": "Service Unavailable", "status_code": 503},
-            {
-                "text": "<html><body><a href='/ok'>ok</a></body></html>",
-                "status_code": 200,
-                "headers": {"Content-Type": "text/html"},
-            },
-        ])
+        m.get(
+            "http://example.com",
+            [
+                {"text": "Service Unavailable", "status_code": 503},
+                {"text": "Service Unavailable", "status_code": 503},
+                {
+                    "text": "<html><body><a href='/ok'>ok</a></body></html>",
+                    "status_code": 200,
+                    "headers": {"Content-Type": "text/html"},
+                },
+            ],
+        )
 
         # We simulate the retries manually to verify the sequence logic
         resp1 = scraper.session.get("http://example.com")

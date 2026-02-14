@@ -157,6 +157,12 @@ def main():
         ),
         default=[],
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        help="Maximum number of retries for failed pages",
+        default=3,
+    )
 
     try:
         import argcomplete
@@ -240,6 +246,7 @@ def main():
                 proxy=args.proxy,
                 include_filters=args.include,
                 exclude_filters=args.exclude,
+                max_retries=args.max_retries,
             )
         except ValueError as exc:
             parser.error(str(exc))

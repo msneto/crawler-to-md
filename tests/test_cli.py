@@ -54,26 +54,11 @@ def test_cli_disable_exports(monkeypatch, tmp_path):
 def test_cli_proxy_option(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
+    def fake_init(self, *args, **kwargs):
         """
         Fake initializer to capture proxy argument.
-
-        Args:
-            proxy (str, optional): Proxy URL.
         """
-        captured["proxy"] = proxy
+        captured["proxy"] = kwargs.get("proxy")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
@@ -100,26 +85,11 @@ def test_cli_proxy_option(monkeypatch, tmp_path):
 def test_cli_proxy_short_option(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
+    def fake_init(self, *args, **kwargs):
         """
         Fake initializer to capture proxy argument.
-
-        Args:
-            proxy (str, optional): Proxy URL.
         """
-        captured["proxy"] = proxy
+        captured["proxy"] = kwargs.get("proxy")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
@@ -146,26 +116,11 @@ def test_cli_proxy_short_option(monkeypatch, tmp_path):
 def test_cli_socks_proxy(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
+    def fake_init(self, *args, **kwargs):
         """
         Fake initializer to capture proxy argument.
-
-        Args:
-            proxy (str, optional): Proxy URL.
         """
-        captured["proxy"] = proxy
+        captured["proxy"] = kwargs.get("proxy")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
@@ -221,28 +176,12 @@ def test_cli_include_exclude_options(monkeypatch, tmp_path):
     """
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
+    def fake_init(self, *args, **kwargs):
         """
         Fake initializer to capture include/exclude arguments.
-
-        Args:
-            include_filters (list, optional): Selectors to include.
-            exclude_filters (list, optional): Selectors to exclude.
         """
-        captured["include_filters"] = include_filters
-        captured["exclude_filters"] = exclude_filters
+        captured["include_filters"] = kwargs.get("include_filters")
+        captured["exclude_filters"] = kwargs.get("exclude_filters")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
@@ -279,28 +218,12 @@ def test_cli_include_exclude_short_options(monkeypatch, tmp_path):
     """
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
+    def fake_init(self, *args, **kwargs):
         """
         Capture include and exclude selectors from short options.
-
-        Args:
-            include_filters (list, optional): Selectors to include.
-            exclude_filters (list, optional): Selectors to exclude.
         """
-        captured["include_filters"] = include_filters
-        captured["exclude_filters"] = exclude_filters
+        captured["include_filters"] = kwargs.get("include_filters")
+        captured["exclude_filters"] = kwargs.get("exclude_filters")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
@@ -337,28 +260,14 @@ def test_cli_include_url_option(monkeypatch, tmp_path):
     """
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
+    def fake_init(self, *args, **kwargs):
         """
         Capture include URL patterns argument.
-
-        Args:
-            include_url_patterns (list): URL substrings to include.
         """
-        captured["include_url_patterns"] = include_url_patterns
+        captured["include_url_patterns"] = kwargs.get("include_url_patterns")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
+
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
     monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
     monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
@@ -449,20 +358,8 @@ def test_cli_overwrite_cache_short_option(monkeypatch, tmp_path):
 def test_cli_timeout_option_passed_to_scraper(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
-        captured["timeout"] = timeout
+    def fake_init(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
@@ -489,20 +386,8 @@ def test_cli_timeout_option_passed_to_scraper(monkeypatch, tmp_path):
 def test_cli_timeout_default_passed_to_scraper(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_init(
-        self,
-        base_url,
-        exclude_patterns,
-        include_url_patterns,
-        db_manager,
-        rate_limit=0,
-        delay=0,
-        proxy=None,
-        include_filters=None,
-        exclude_filters=None,
-        timeout=None,
-    ):
-        captured["timeout"] = timeout
+    def fake_init(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
 
     monkeypatch.setattr(Scraper, "__init__", fake_init)
     monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
