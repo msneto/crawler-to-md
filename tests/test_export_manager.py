@@ -418,3 +418,31 @@ def test_minify_markdown_keeps_hyphen_only_lines_inside_fences():
     minified = exporter._minify_markdown(content)
 
     assert minified == content
+
+
+def test_export_to_json_minification(tmp_path):
+    db = DatabaseManager(":memory:")
+    db.insert_page("http://example.com", "# Content", json.dumps({"k": "v"}))
+
+    # Test Pretty (Default)
+    exporter_pretty = ExportManager(db, minify=False)
+    json_path_pretty = tmp_path / "pretty.json"
+    exporter_pretty.export_to_json(str(json_path_pretty))
+    content_pretty = json_path_pretty.read_text(encoding="utf-8")
+    assert "\n" in content_pretty
+    assert ': "' in content_pretty  # Default separator has space after colon
+
+    # Test Minified
+    exporter_minify = ExportManager(db, minify=True)
+    json_path_minify = tmp_path / "minify.json"
+    exporter_minify.export_to_json(str(json_path_minify))
+    content_minify = json_path_minify.read_text(encoding="utf-8")
+    assert "\n" not in content_minify
+    assert ':"' in content_minify  # Compact separator has no space after colon
+    assert ',"' in content_minify  # Compact separator has no space after comma
+
+    # Verify data integrity
+    data_pretty = json.loads(content_pretty)
+    data_minify = json.loads(content_minify)
+    assert data_pretty == data_minify
+    assert data_pretty[0]["url"] == "http://example.com"

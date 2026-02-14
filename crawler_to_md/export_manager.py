@@ -244,7 +244,17 @@ class ExportManager:
                 data_to_export.append(
                     {"url": url, "content": content, "metadata": filtered_metadata}
                 )
-            json.dump(data_to_export, json_file, ensure_ascii=False, indent=4)
+
+            indent = None if self.minify else 4
+            separators = (",", ":") if self.minify else None
+
+            json.dump(
+                data_to_export,
+                json_file,
+                ensure_ascii=False,
+                indent=indent,
+                separators=separators,
+            )
             # Log the successful export to JSON file
             logger.info(f"Exported pages to JSON file: {output_path}")
 
