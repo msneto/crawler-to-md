@@ -71,3 +71,37 @@ def test_is_url_in_scope_strict_host_and_path():
         )
         is False
     )
+
+
+def test_normalize_url_edge_cases():
+    with pytest.raises(ValueError, match="URL must be a string"):
+        utils.normalize_url(None)
+    with pytest.raises(ValueError, match="URL must be a non-empty string"):
+        utils.normalize_url("  ")
+    with pytest.raises(ValueError, match="URL must be absolute"):
+        # scheme but no host
+        utils.normalize_url("http:///path")
+    with pytest.raises(ValueError, match="URL hostname is required"):
+        # has netloc but no hostname
+        utils.normalize_url("http://:80")
+
+    # Port handling
+    assert utils.normalize_url("http://example.com:8080/path") == "http://example.com:8080/path"
+
+
+def test_is_url_in_scope_edge_cases():
+    # Different schemes
+    assert utils.is_url_in_scope("https://a.com", "http://a.com") is False
+
+    # Root base path
+    assert utils.is_url_in_scope("https://a.com/any", "https://a.com/") is True
+
+    # Base path without trailing slash
+    assert utils.is_url_in_scope("https://a.com/docs/1", "https://a.com/docs") is True
+    assert utils.is_url_in_scope("https://a.com/docs1", "https://a.com/docs") is False
+    assert utils.is_url_in_scope("https://a.com/docs", "https://a.com/docs") is True
+
+
+def test_normalize_markdown_empty():
+    assert utils.normalize_markdown(None) == ""
+    assert utils.normalize_markdown("") == ""

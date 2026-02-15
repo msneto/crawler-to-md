@@ -247,3 +247,12 @@ def test_get_retriable_failed_urls():
     retriable = db.get_retriable_failed_urls(max_retries=3)
     assert set(retriable) == {"http://a", "http://b"}
     assert "http://c" not in retriable
+
+
+def test_db_empty_batch_operations():
+    db = DatabaseManager(":memory:")
+    # These should just return without error
+    db.upsert_pages([])
+    db.mark_links_visited([])
+    db.insert_links([])
+    db.commit_crawl_batch([], [], [], [])

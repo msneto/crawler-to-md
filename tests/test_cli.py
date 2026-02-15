@@ -736,3 +736,85 @@ def test_cli_closes_database_when_export_raises(monkeypatch, tmp_path):
         cli.main()
 
     assert calls["close"] == 1
+
+
+def test_cli_export_individual(monkeypatch, tmp_path):
+    calls = {"ei": False}
+
+    def fake_ei(self, output_folder, base_url):
+        calls["ei"] = True
+        return "files/"
+
+    monkeypatch.setattr(ExportManager, "export_individual_markdown", fake_ei)
+    monkeypatch.setattr(Scraper, "start_scraping", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    args = [
+        "prog",
+        "--url",
+        "http://example.com",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(tmp_path / "cache"),
+        "--export-individual",
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+    assert calls["ei"] is True
+
+
+def test_cli_urls_file(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_start(self, url=None, urls_list=None):
+        captured["urls_list"] = urls_list
+
+    monkeypatch.setattr(Scraper, "start_scraping", fake_start)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text("http://example.com/1\nhttp://example.com/2")
+
+    args = [
+        "prog",
+        "--urls-file",
+        str(urls_file),
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(tmp_path / "cache"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+    assert captured["urls_list"] == ["http://example.com/1", "http://example.com/2"]
+
+
+def test_cli_urls_file_stdin(monkeypatch, tmp_path):
+    import io
+    captured = {}
+
+    def fake_start(self, url=None, urls_list=None):
+        captured["urls_list"] = urls_list
+
+    monkeypatch.setattr(Scraper, "start_scraping", fake_start)
+    monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
+    monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
+    
+    stdin_mock = io.StringIO("http://example.com/stdin1\nhttp://example.com/stdin2\n")
+    monkeypatch.setattr(sys, "stdin", stdin_mock)
+
+    args = [
+        "prog",
+        "--urls-file",
+        "-",
+        "--output-folder",
+        str(tmp_path),
+        "--cache-folder",
+        str(tmp_path / "cache"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    cli.main()
+    assert captured["urls_list"] == ["http://example.com/stdin1", "http://example.com/stdin2"]

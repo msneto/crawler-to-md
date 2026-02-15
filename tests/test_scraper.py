@@ -1,8 +1,10 @@
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 import tqdm
+from bs4 import BeautifulSoup as RealBeautifulSoup
 
 from crawler_to_md.database_manager import DatabaseManager
 from crawler_to_md.scraper import Scraper
@@ -442,8 +444,6 @@ def test_start_scraping_parses_each_page_once(monkeypatch):
     scraper.unvisited_links_batch_size = 10
 
     parse_count = {"count": 0}
-
-    from bs4 import BeautifulSoup as RealBeautifulSoup
 
     def counting_bs4(*args, **kwargs):
         parse_count["count"] += 1
@@ -1214,3 +1214,311 @@ def test_scraper_retries_behavior_with_mock(monkeypatch):
         assert "ok" in resp3.text
 
         assert m.call_count == 3
+
+
+def test_start_scraping_rate_limit(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+        rate_limit=2,
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html></html>"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: DummyResp())
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+
+    sleep_calls = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+
+    # We need at least rate_limit + 1 requests to trigger sleep
+    urls = ["http://example.com/1", "http://example.com/2", "http://example.com/3"]
+    scraper.start_scraping(urls_list=urls)
+
+    # Should have slept once after 2 requests
+    assert len(sleep_calls) >= 1
+
+
+def test_start_scraping_delay(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+        delay=0.5,
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html></html>"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: DummyResp())
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+
+    sleep_calls = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+
+    urls = ["http://example.com/1", "http://example.com/2"]
+    scraper.start_scraping(urls_list=urls)
+
+    # Should have slept for each request
+    assert len(sleep_calls) == 2
+    assert all(s == 0.5 for s in sleep_calls)
+
+
+def test_start_scraping_skips_non_html(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+
+    class NonHtmlResp:
+        status_code = 200
+        headers = {"content-type": "application/pdf"}
+        text = "%PDF-1.4"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: NonHtmlResp())
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+
+    scraper.start_scraping(url="http://example.com/file.pdf")
+
+    assert db.get_visited_links_count() == 1
+    assert len(db.pages) == 0  # No page should be saved
+
+
+def test_failed_scrape_metadata():
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    metadata = scraper._failed_scrape_metadata("failed", "ErrorType", "Some message")
+    import json
+    parsed = json.loads(metadata)
+    assert parsed["scrape_status"] == "failed"
+    assert parsed["error_type"] == "ErrorType"
+    assert parsed["error_message"] == "Some message"
+
+
+def test_fetch_links_with_list_href():
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup('<html><body><a id="link">L</a></body></html>', "html.parser")
+    link = soup.find("a")
+    # Manually set href to a list, which sometimes happens with some BS4 parsers
+    link["href"] = ["http://a.com/page1", "http://a.com/page2"]
+    
+    links = scraper._extract_links_from_soup(soup, "http://a.com")
+    assert "http://a.com/page1" in links
+
+
+def test_scrape_page_include_filters_no_body():
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db, include_filters=["p"])
+    # No <html> or <body> tags
+    html = "<p>Keep</p><span>Ignore</span>"
+    content, _ = scraper.scrape_page(html, "http://a.com")
+    assert "Keep" in content
+    assert "Ignore" not in content
+
+
+def test_scrape_page_no_body_tag():
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db, include_filters=["p"])
+    # HTML without <html> or <body>
+    html = "<p>No body</p>"
+    content, _ = scraper.scrape_page(html, "http://a.com")
+    assert "No body" in content
+
+
+def test_start_scraping_invalid_seed_url(monkeypatch):
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+    
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html></html>"
+        def close(self): pass
+
+    # Test invalid URL in list
+    db = ListDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: DummyResp())
+    scraper.start_scraping(urls_list=["not a url", "http://a.com/ok"])
+    assert "http://a.com/ok" in db.links
+    assert "not a url" not in db.links
+
+    # Test invalid single URL
+    db2 = ListDB()
+    scraper2 = Scraper("http://a.com", [], [], db2)
+    monkeypatch.setattr(scraper2.session, "get", lambda url, **k: DummyResp())
+    scraper2.start_scraping(url="not a url")
+    assert len(db2.links) == 0
+
+
+def test_scrape_page_slow_path(monkeypatch):
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    
+    # Mock _CustomMarkdownify to None to trigger slow path
+    monkeypatch.setattr("crawler_to_md.scraper._CustomMarkdownify", None)
+    
+    # We need to mock MarkItDown and its convert_stream
+    with patch("crawler_to_md.scraper.MarkItDown") as mock_mid:
+        mock_mid.return_value.convert_stream.return_value = "Slow Path Content"
+        html = "<html><body><p>Test</p></body></html>"
+        content, _ = scraper.scrape_page(html, "http://a.com")
+        assert content == "Slow Path Content"
+
+
+def test_scrape_page_exception_handling():
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db, include_filters=["p"])
+    
+    # Mock _find_elements which is called inside the try-except block of _scrape_page_from_soup
+    with patch.object(Scraper, "_find_elements") as mock_find:
+        mock_find.side_effect = Exception("Inner error")
+        content, metadata = scraper.scrape_page("<html><body><p>Test</p></body></html>", "http://a.com")
+        assert content is None
+        assert metadata is None
+
+
+def test_is_valid_link_value_error(monkeypatch):
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    
+    def mock_normalize(url):
+        raise ValueError("Invalid")
+    
+    monkeypatch.setattr("crawler_to_md.utils.normalize_url", mock_normalize)
+    assert scraper.is_valid_link("anything") is False
+
+
+def test_fetch_links_error_statuses(monkeypatch):
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    
+    class ErrorResp:
+        status_code = 404
+        def close(self): pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: ErrorResp())
+    assert scraper.fetch_links("http://a.com") == []
+
+    def raise_exc(url, **k):
+        raise requests.RequestException("conn error")
+    
+    monkeypatch.setattr(scraper.session, "get", raise_exc)
+    assert scraper.fetch_links("http://a.com") == []
+
+
+def test_start_scraping_response_variants(monkeypatch):
+    db = ListDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+    
+    class Resp500:
+        status_code = 500
+        headers = {"content-type": "text/html"}
+        def close(self): pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: Resp500())
+    scraper.start_scraping(url="http://a.com/500")
+    # Should be in pages as failed and have retry incremented
+    assert len(db.pages) == 1
+    assert db.retry_counts["http://a.com/500"] == 1
+
+    class Resp404:
+        status_code = 404
+        headers = {"content-type": "text/html"}
+        def close(self): pass
+
+    db2 = ListDB()
+    scraper2 = Scraper("http://a.com", [], [], db2)
+    monkeypatch.setattr(scraper2.session, "get", lambda url, **k: Resp404())
+    scraper2.start_scraping(url="http://a.com/404")
+    # Should be marked visited but NOT in pages (permanent failure, no retry)
+    assert db2.get_visited_links_count() == 1
+    assert len(db2.pages) == 0
+
+
+def test_start_scraping_normalize_error_in_loop(monkeypatch):
+    db = ListDB()
+    db.insert_link("http://a.com/bad")
+    scraper = Scraper("http://a.com", [], [], db)
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+    
+    def mock_normalize(url):
+        if "bad" in url:
+            raise ValueError("bad")
+        return url
+
+    # We need to mock it where it's called in the loop
+    monkeypatch.setattr("crawler_to_md.utils.normalize_url", mock_normalize)
+    
+    scraper.start_scraping()
+    assert db.get_visited_links_count() == 1
+
+
+def test_find_elements_missing_id():
+    db = DummyDB()
+    scraper = Scraper("http://a.com", [], [], db)
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup("<html><body></body></html>", "html.parser")
+    assert scraper._find_elements(soup, "#nonexistent") == []
+
+
+def test_start_scraping_rate_limit_precise(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url="http://example.com",
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+        rate_limit=1,
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<html><body>Some content</body></html>"
+        def close(self): pass
+
+    monkeypatch.setattr(scraper.session, "get", lambda url, **k: DummyResp())
+    monkeypatch.setattr(tqdm, "tqdm", MagicMock())
+    # Ensure _scrape_page_from_soup returns content so pbar and other things proceed normally
+    monkeypatch.setattr(Scraper, "_scrape_page_from_soup", lambda *a: ("MD", {"t": "T"}))
+
+    sleep_calls = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+    
+    # Mock time.time
+    t_vals = [100.0, 100.1, 100.2, 100.3, 100.4, 100.5, 100.6, 100.7]
+    def mock_time():
+        return t_vals.pop(0) if t_vals else 200.0
+    monkeypatch.setattr(time, "time", mock_time)
+
+    # Insert two links to ensure the second one triggers the rate limit check
+    db.insert_link(["http://example.com/1", "http://example.com/2"])
+    scraper.start_scraping()
+
+    assert len(sleep_calls) >= 1
+    assert sleep_calls[0] > 0
