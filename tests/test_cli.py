@@ -802,7 +802,7 @@ def test_cli_urls_file_stdin(monkeypatch, tmp_path):
     monkeypatch.setattr(Scraper, "start_scraping", fake_start)
     monkeypatch.setattr(ExportManager, "export_to_markdown", lambda *a, **k: None)
     monkeypatch.setattr(ExportManager, "export_to_json", lambda *a, **k: None)
-    
+
     stdin_mock = io.StringIO("http://example.com/stdin1\nhttp://example.com/stdin2\n")
     monkeypatch.setattr(sys, "stdin", stdin_mock)
 

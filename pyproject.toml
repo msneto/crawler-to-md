@@ -45,6 +45,7 @@ local_scheme   = "no-local-version"
 dev = [
     "pytest==8.3.5",
     "requests-mock==1.12.1",
+    "ruff==0.15.1",
 ]
 
 # Entry points for command-line interface scripts
